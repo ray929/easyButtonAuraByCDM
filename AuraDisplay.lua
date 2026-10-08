@@ -83,6 +83,11 @@ end
 -- 由 RefreshAll / OnCdmItemRefreshed / HideStaleEntries 末尾统一调用。
 function B.ApplyButtonGlows()
     if not LCG then return end
+    -- 全局开关关闭：停掉所有发光（覆盖层的撤下由 RefreshAll / RebuildEntries 负责）
+    if B.IsEnabled and not B.IsEnabled() then
+        for btn in pairs(glowApplied) do StopButtonGlow(btn) end
+        return
+    end
     local want = {}
     for spellID, e in pairs(entries) do
         local btn = e.button
@@ -440,6 +445,15 @@ end
 -- 战斗中不重建（等脱战），避免战斗中创建容器与目标技能解析受 secret 影响。
 function B.RebuildEntries()
     if not B.db or InCombatLockdown() then return end
+    -- 全局开关关闭：撤下所有覆盖层 + 停发光，且不建新容器；开启后下一次重建会恢复
+    if B.IsEnabled and not B.IsEnabled() then
+        for _, e in pairs(entries) do
+            e.button, e.buttonName = nil, nil
+            HideEntry(e)
+        end
+        B.ApplyButtonGlows()
+        return
+    end
     local bindings = B.GetBindings()
     local map = B.BuildSpellButtonMap()
     local known = B.knownBuffs or {}
@@ -506,6 +520,14 @@ end
 -- 全量刷新：重定位 + 同步发光（登录 / 切换专精 / 动作条变动 / 光环增删 / 定时兜底）
 function B.RefreshAll()
     if not B.db then return end
+    -- 全局开关关闭：撤下所有覆盖层 + 停发光（定时巡检 / 事件驱动都会走到这里）
+    if B.IsEnabled and not B.IsEnabled() then
+        for _, e in pairs(entries) do
+            if e.container then HideEntry(e) end
+        end
+        B.ApplyButtonGlows()
+        return
+    end
     for spellID, e in pairs(entries) do
         if e.button and e.container then
             local ok = pcall(UpdateEntry, e, e.button)

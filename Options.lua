@@ -287,6 +287,9 @@ local function DoRefresh()
     B._inCombat = InCombatLockdown() and true or false
 
     configFrame.specText:SetText(L("SPEC_LABEL") .. ": " .. B.GetCurrentSpecName())
+    if configFrame.enableCheck then
+        configFrame.enableCheck:SetChecked(B.IsEnabled and B.IsEnabled() or false)
+    end
 
     local list = BuildRowList()
     local buttonMap = B.BuildSpellButtonMap()
@@ -367,6 +370,23 @@ local function BuildConfigFrame()
     configFrame.desc:SetWidth(PANEL_W - 40)
     configFrame.desc:SetJustifyH("LEFT")
     configFrame.desc:SetText(L("PAGE_DESC"))
+
+    -- 全局启用开关（角色级、不分专精；窗口右上角）。标签锚在复选框【左侧】，
+    -- 避免标签向右伸出窗口右边界（滚动条那次同类越界问题的经验）。
+    configFrame.enableCheck = CreateFrame("CheckButton", nil, configFrame, "UICheckButtonTemplate")
+    configFrame.enableCheck:SetSize(24, 24)
+    configFrame.enableCheck:SetPoint("TOPRIGHT", -16, -34)
+    configFrame.enableLabel = configFrame.enableCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    configFrame.enableLabel:SetPoint("RIGHT", configFrame.enableCheck, "LEFT", -4, 0)
+    configFrame.enableLabel:SetText(L("ENABLE"))
+    configFrame.enableCheck:SetScript("OnClick", function(self)
+        if InCombatLockdown() then
+            self:SetChecked(not self:GetChecked())
+            return
+        end
+        B.SetEnabled(self:GetChecked() and true or false)
+    end)
+    configFrame.enableCheck:SetChecked(B.IsEnabled and B.IsEnabled() or false)
 
     configFrame.noAuras = configFrame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     configFrame.noAuras:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 0, -12)

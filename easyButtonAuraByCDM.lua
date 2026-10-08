@@ -32,6 +32,7 @@ local LOCALES = {
     enUS = {
         SPEC_LABEL        = "Current Specialization",
         SPEC_UNKNOWN      = "Unknown",
+        ENABLE            = "Enabled",
         PAGE_DESC         = "Bind auras from Blizzard's Cooldown Manager to action bar buttons. The Cooldown Manager display itself is left untouched.",
         NO_AURAS          = "No auras found. Enable buffs in Blizzard's Cooldown Manager (Buffs) first, then reopen this page.",
         COL_BIND          = "Bind",
@@ -55,6 +56,7 @@ local LOCALES = {
     zhCN = {
         SPEC_LABEL        = "当前专精",
         SPEC_UNKNOWN      = "未知",
+        ENABLE            = "启用",
         PAGE_DESC         = "把暴雪冷却管理器中的增益光环手动绑定到动作条按钮。冷却管理器本身的显示保持原样。",
         NO_AURAS          = "未找到可绑定的光环。请先在暴雪冷却管理器的「增益」里启用要追踪的光环，然后重新打开本页面。",
         COL_BIND          = "绑定",
@@ -78,6 +80,7 @@ local LOCALES = {
     zhTW = {
         SPEC_LABEL        = "目前專精",
         SPEC_UNKNOWN      = "未知",
+        ENABLE            = "啟用",
         PAGE_DESC         = "把暴雪冷卻管理器中的增益光環手動綁定到快捷列按鈕。冷卻管理器本身的顯示維持原樣。",
         NO_AURAS          = "找不到可綁定的光環。請先在暴雪冷卻管理器的「增益」中啟用要追蹤的光環，然後重新開啟本頁面。",
         COL_BIND          = "綁定",
@@ -551,7 +554,8 @@ function B.GetSpellDisplayName(spellID)
 end
 
 -- =========================================================
--- 存档：按专精存储
+-- 存档：全局开关（角色级）+ 绑定（按专精）
+-- easyButtonAuraByCDMDB.enabled = true|false                          （角色级，所有专精共用）
 -- easyButtonAuraByCDMDB.specs[specID] = { bindings = { [auraSpellID] = cfg } }
 --   cfg = { bindSpell = <目标技能 spellID，nil = 未绑定>,
 --           timePos = "default|up|down|left|right|none",
@@ -570,9 +574,25 @@ end
 
 function B.InitStorage()
     easyButtonAuraByCDMDB = easyButtonAuraByCDMDB or {}
+    if easyButtonAuraByCDMDB.enabled == nil then
+        easyButtonAuraByCDMDB.enabled = true
+    end
     if not easyButtonAuraByCDMDB.specs then
         easyButtonAuraByCDMDB.specs = { [0] = { bindings = {} } }
     end
+end
+
+-- 全局开关（角色级，所有专精共用；关闭 = 撤下全部覆盖层 + 停全部发光）
+function B.IsEnabled()
+    return easyButtonAuraByCDMDB and easyButtonAuraByCDMDB.enabled ~= false
+end
+
+function B.SetEnabled(v)
+    B.InitStorage()
+    easyButtonAuraByCDMDB.enabled = v and true or false
+    -- 关闭 / 开启都走一次重建：RebuildEntries → RefreshAll 会按开关状态撤下 / 恢复覆盖层与发光
+    if B.RebuildEntries then B.RebuildEntries() end
+    if B.RefreshPanel then B.RefreshPanel() end
 end
 
 -- 切换到「当前专精」配置槽：B.db 指向 specs[specID] 子表
