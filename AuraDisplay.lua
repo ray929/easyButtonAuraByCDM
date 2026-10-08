@@ -181,7 +181,7 @@ local function BuildContainer(e)
     container:SetUnit(unit)
     container:SetEnabled(true)
     container:EnableMouse(false)   -- 覆盖在动作按钮之上，绝不拦截点击（自有帧，非受保护帧，安全）
-    e.container = containe
+    e.container = container
     e.unit = unit
     e.filterString = filterString
     e.cd, e.fs, e.auraButton = nil, nil, nil
@@ -344,7 +344,7 @@ end
 -- ShouldRegisterForDynamicEvents = IsVisible and IsEnabled）。
 -- 子控件随容器一起移出屏幕 —— 受限帧上无法用 SetAlpha/Hide 单独收起数字。
 local function DockContainer(e)
-    local c = e.containe
+    local c = e.container
     if not c then return end
     if e._docked then return end
     c:ClearAllPoints()
