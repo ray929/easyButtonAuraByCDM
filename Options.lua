@@ -21,19 +21,20 @@ local L = B.L
 -- 配置窗口宽度：过宽会超出小屏，行内控件按固定列排布。
 -- ROW_W 额外扣掉右侧留给暴雪滚动条的空间（UIPanelScrollFrameTemplate 的滚动条
 -- 叠在滚动区右缘约 16px），否则最右侧的「反发光」文字会被滚动条压住 / 裁掉。
-local PANEL_W = 640
-local ROW_W   = PANEL_W - 40
+local PANEL_W = 680
+local ROW_W   = PANEL_W - 44
 local ROW_H   = 56
 
 -- 列表区固定高度（可见行数），行数超过即出现滚动条，窗口高度不再随行数增长
 local VISIBLE_ROWS = 7
 local LIST_H = VISIBLE_ROWS * ROW_H
 
--- 行内第二行控件的横坐标（相对 row 左侧）与宽度
-local X_EDIT,    W_EDIT    = 54, 128
-local X_TIME,    W_TIME    = 196, 104
-local X_STACK,   W_STACK   = 312, 108
-local X_GLOW,    X_INVERSE = 436, 508
+-- 行内第二行控件的横坐标（相对 row 左侧）与宽度。
+-- 最右「反发光 / Missing」标签右端需与滚动区右缘留出余量（本组约 40px），否则显拥挤。
+local X_EDIT,    W_EDIT    = 54, 140
+local X_TIME,    W_TIME    = 202, 106
+local X_STACK,   W_STACK   = 316, 110
+local X_GLOW,    X_INVERSE = 446, 526
 
 -- 暴雪设置分类名 / 配置窗口标题：不本地化，固定用插件名（用户指定）
 local ADDON_TITLE = "Easy Button Aura by CDM"

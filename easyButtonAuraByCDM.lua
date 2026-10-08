@@ -50,7 +50,7 @@ local LOCALES = {
         ERR_INVALID       = "Spell not found",
         STATUS_NOT_ON_BAR = "not on action bars",
         OPEN_OPTIONS      = "Open Options",
-        STUB_HINT         = "Configure this addon in its own window. Click the button below, or type /babc.",
+        STUB_HINT         = "Click the button below, or type /babc, to open the configuration window.",
     },
     zhCN = {
         SPEC_LABEL        = "当前专精",
@@ -73,7 +73,7 @@ local LOCALES = {
         ERR_INVALID       = "未找到该法术",
         STATUS_NOT_ON_BAR = "不在动作条上",
         OPEN_OPTIONS      = "打开配置",
-        STUB_HINT         = "本插件的配置在独立窗口中完成。点击下方按钮，或输入 /babc 打开。",
+        STUB_HINT         = "点击按钮，或者输入 /babc 打开配置窗口。",
     },
     zhTW = {
         SPEC_LABEL        = "目前專精",
@@ -96,7 +96,7 @@ local LOCALES = {
         ERR_INVALID       = "找不到該法術",
         STATUS_NOT_ON_BAR = "不在快捷列上",
         OPEN_OPTIONS      = "開啟設定",
-        STUB_HINT         = "本插件的設定在獨立視窗中完成。點擊下方按鈕，或輸入 /babc 開啟。",
+        STUB_HINT         = "點擊按鈕，或者輸入 /babc 開啟設定視窗。",
     },
 }
 
