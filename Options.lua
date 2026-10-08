@@ -249,8 +249,14 @@ local function UpdateRow(row, spellID, buttonMap)
     local cfg = B.GetBinding(spellID)
     local bound = cfg and cfg.bindSpell
 
+    -- 绑定框显示当前绑定的技能名。
+    -- ⚠️ 必须「先清空再写入」：EditBox:SetText 在文本未变时被客户端短路为 no-op，
+    --    而初次 SetText 发生在设置面板尚隐藏时（字体度量未就绪），内部水平滚动偏移会算错，
+    --    文字被滚到框外看不见（鼠标拖动选择才显现）。先清空强制其按当前尺寸重算偏移。
     if not row.edit:HasFocus() then
-        row.edit:SetText(bound and B.GetSpellDisplayName(bound) or "")
+        local text = bound and B.GetSpellDisplayName(bound) or ""
+        row.edit:SetText("")
+        row.edit:SetText(text)
     end
 
     if bound and not buttonMap[bound] then
@@ -332,37 +338,8 @@ end
 function B.RefreshPanel()
     if not panel or refreshing then return end
     refreshing = true
-    local ok, list = pcall(DoRefresh)
+    pcall(DoRefresh)
     refreshing = false
-
-    -- 【临时诊断】面板行内容（排查「绑定列空白」，排查完删除）
-    if not ok then
-        print("|cffffcc00[EBAC-ROW]|r REFRESH_ERR=" .. tostring(list))
-        return
-    end
-    local dbg = {}
-    local okd = pcall(function()
-        local nBuf = 0
-        for _ in pairs(B.knownBuffs or {}) do nBuf = nBuf + 1 end
-        local bkeys = {}
-        for id in pairs(B.GetBindings()) do
-            local cfg = B.GetBinding(id)
-            bkeys[#bkeys + 1] = tostring(id) .. ":" .. (cfg and tostring(cfg.bindSpell) or "nil")
-        end
-        table.sort(bkeys)
-        dbg[#dbg + 1] = "db=" .. tostring(B.db ~= nil) .. " spec=" .. tostring(B.currentSpecID)
-            .. " nBuf=" .. nBuf .. " n=" .. #list
-        dbg[#dbg + 1] = "binds{" .. table.concat(bkeys, ",") .. "}"
-        for i = 1, #list do
-            local id = list[i]
-            local cfg = B.GetBinding(id)
-            local txt = rows[i] and rows[i].edit and rows[i].edit:GetText() or nil
-            local nam = rows[i] and rows[i].name and rows[i].name:GetText() or "?"
-            dbg[#dbg + 1] = tostring(id) .. "=>" .. (cfg and tostring(cfg.bindSpell) or "nocfg")
-                .. ",nam=[" .. tostring(nam) .. "],txt=[" .. tostring(txt) .. "]"
-        end
-    end)
-    if okd then print("|cffffcc00[EBAC-ROW]|r " .. table.concat(dbg, " ")) end
 end
 
 -- =========================================================
