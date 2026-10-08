@@ -3,21 +3,26 @@
 --
 -- 单一设置页，集成进暴雪自带的插件设置（ESC → 选项 → 插件 → 本插件）。
 --   · 无 slash 命令；战斗中禁止修改（控件禁用 + 顶部红色提示）。
---   · 每行 = CDM 里一个「已启用」的增益：可把它绑定到某个动作条技能，
+--   · 每行 = CDM 里一个「已启用」的光环：可把它绑定到某个动作条技能，
 --     并分别设置剩余时间 / 层数的位置，以及发光 / 反发光。
 --   · 修改即时落盘（canvas layout 的 OnCommit 为空实现）。
 --
--- 依赖 easyButtonAuraByCDM.lua 暴露的接口：knownBuffs / GetBindings / GetBinding /
--- SetBoundSpell / SetBindingOption / ParseSpellInput / GetSpellDisplayName /
--- GetCurrentSpecName / BuildSpellButtonMap / POS_KEYS / PosLabel / L / IsSecret。
+-- 布局约定：所有控件的坐标都是【相对 row 的绝对坐标】，不互相链式锚定，
+-- 保证行与行、控件与控件严格对齐且不重叠（链式锚定曾被反馈「错位」）。
 
 local B = EasyButtonAuraByCDM
 local L = B.L
 
-local PANEL_W  = 620
-local ROW_W    = PANEL_W - 16
-local ROW_H    = 46
-local HEADER_H = 112
+-- 面板宽度：设置 canvas 可视宽度有限，过宽会把右侧控件裁掉
+local PANEL_W = 520
+local ROW_W   = PANEL_W - 16
+local ROW_H   = 56
+
+-- 行内第二行控件的横坐标（相对 row 左侧）与宽度
+local X_EDIT,    W_EDIT    = 44, 108
+local X_TIME,    W_TIME    = 160, 86
+local X_STACK,   W_STACK   = 254, 94
+local X_GLOW,    X_INVERSE = 358, 426
 
 local panel
 local rows = {}          -- 行池（复用）
@@ -61,7 +66,6 @@ local function UpdateCombatState()
     end
     for _, row in ipairs(rows) do
         row.edit:SetEnabled(not locked)
-        row.selfBtn:SetEnabled(not locked)
         row.timeBtn:SetEnabled(not locked)
         row.stackBtn:SetEnabled(not locked)
         row.glowCheck:SetEnabled(not locked)
@@ -122,23 +126,24 @@ local function CreateRow(index)
     row:SetSize(ROW_W, ROW_H)
     row:SetPoint("TOPLEFT", 0, -(index - 1) * ROW_H)
 
+    -- 第一行：图标 + 光环名 + 状态提示
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(20, 20)
-    row.icon:SetPoint("TOPLEFT", 4, -6)
+    row.icon:SetPoint("TOPLEFT", 6, -4)
 
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
+    row.name:SetJustifyH("LEFT")
 
     row.status = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.status:SetPoint("LEFT", row.name, "RIGHT", 10, 0)
+    row.status:SetJustifyH("LEFT")
 
-    row.bindLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    row.bindLabel:SetPoint("BOTTOMLEFT", 4, 14)
-    row.bindLabel:SetText(L("COL_BIND"))
-
+    -- 第二行：绑定输入框 / 时间 / 层数 / 发光 / 反发光
+    -- 统一底边（按钮 y=6、勾选框 y=4），中心线一致 → 视觉对齐
     row.edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
-    row.edit:SetSize(100, 20)
-    row.edit:SetPoint("LEFT", row.bindLabel, "RIGHT", 6, 0)
+    row.edit:SetSize(W_EDIT, 20)
+    row.edit:SetPoint("BOTTOMLEFT", X_EDIT, 6)
     row.edit:SetAutoFocus(false)
     row.edit:SetMaxLetters(60)
     row.edit:SetScript("OnEnterPressed", function() CommitEdit(row) end)
@@ -151,27 +156,21 @@ local function CreateRow(index)
         row._committing = false
     end)
 
-    row.selfBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.selfBtn:SetSize(40, 20)
-    row.selfBtn:SetPoint("LEFT", row.edit, "RIGHT", 4, 0)
-    row.selfBtn:SetText(L("BTN_SELF"))
-    AddTip(row.selfBtn, L("BTN_SELF_TIP"))
-    row.selfBtn:SetScript("OnClick", function()
-        if B._inCombat then return end
-        if row.spellID then B.SetBoundSpell(row.spellID, row.spellID) end
-    end)
+    row.bindLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.bindLabel:SetPoint("RIGHT", row.edit, "LEFT", -6, 0)
+    row.bindLabel:SetText(L("COL_BIND"))
 
     row.timeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.timeBtn:SetSize(104, 20)
-    row.timeBtn:SetPoint("LEFT", row.selfBtn, "RIGHT", 10, 0)
+    row.timeBtn:SetSize(W_TIME, 20)
+    row.timeBtn:SetPoint("BOTTOMLEFT", X_TIME, 6)
     row.timeBtn:SetScript("OnClick", function()
         if B._inCombat then return end
         CyclePos(row, "timePos")
     end)
 
     row.stackBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.stackBtn:SetSize(116, 20)
-    row.stackBtn:SetPoint("LEFT", row.timeBtn, "RIGHT", 8, 0)
+    row.stackBtn:SetSize(W_STACK, 20)
+    row.stackBtn:SetPoint("BOTTOMLEFT", X_STACK, 6)
     row.stackBtn:SetScript("OnClick", function()
         if B._inCombat then return end
         CyclePos(row, "stackPos")
@@ -179,7 +178,7 @@ local function CreateRow(index)
 
     row.glowCheck = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
     row.glowCheck:SetSize(24, 24)
-    row.glowCheck:SetPoint("LEFT", row.stackBtn, "RIGHT", 14, 0)
+    row.glowCheck:SetPoint("BOTTOMLEFT", X_GLOW, 4)
     row.glowLabel = row.glowCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.glowLabel:SetPoint("LEFT", row.glowCheck, "RIGHT", 2, 0)
     row.glowLabel:SetText(L("GLOW"))
@@ -196,7 +195,7 @@ local function CreateRow(index)
 
     row.inverseCheck = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
     row.inverseCheck:SetSize(24, 24)
-    row.inverseCheck:SetPoint("LEFT", row.glowLabel, "RIGHT", 14, 0)
+    row.inverseCheck:SetPoint("BOTTOMLEFT", X_INVERSE, 4)
     row.inverseLabel = row.inverseCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.inverseLabel:SetPoint("LEFT", row.inverseCheck, "RIGHT", 2, 0)
     row.inverseLabel:SetText(L("INVERSE"))
@@ -242,7 +241,7 @@ end
 -- =========================================================
 -- 面板刷新
 -- =========================================================
--- 行集合 = CDM 已启用增益 ∪ 已有绑定（后者保证解绑前的旧光环仍可管理），按名称排序
+-- 行集合 = CDM 已启用光环 ∪ 已有绑定（后者保证解绑前的旧光环仍可管理），按名称排序
 local function BuildRowList()
     local seen, list = {}, {}
     local function add(id)
@@ -286,9 +285,15 @@ function B.RefreshPanel()
         rows[i]:Hide()
     end
 
+    local count = math.max(#list, 1)
     panel.noAuras:SetShown(#list == 0)
-    panel.rows:SetSize(ROW_W, math.max(#list, 1) * ROW_H)
-    panel:SetSize(PANEL_W, HEADER_H + math.max(#list, 1) * ROW_H + 16)
+    panel.rows:SetSize(ROW_W, count * ROW_H)
+
+    -- 面板高度 = 头部（面板顶 → 行区域顶） + 行区域 + 底部留白。
+    -- 头部高度取运行时实际几何（描述行数会随语言变化，不能用常量）；几何不可用时用兜底值。
+    local pTop, rTop = panel:GetTop(), panel.rows:GetTop()
+    local headerH = (pTop and rTop and pTop > rTop) and (pTop - rTop) or 120
+    panel:SetSize(PANEL_W, headerH + count * ROW_H + 16)
 
     UpdateCombatState()
     refreshing = false
@@ -299,7 +304,7 @@ end
 -- =========================================================
 local function BuildPanel()
     panel = CreateFrame("Frame")
-    panel:SetSize(PANEL_W, HEADER_H + ROW_H + 16)
+    panel:SetSize(PANEL_W, 200)
 
     -- canvas layout 要求的三函数：修改即时生效，故均为空 / 仅刷新
     panel.OnCommit  = function() end
@@ -313,28 +318,28 @@ local function BuildPanel()
     panel.specText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     panel.specText:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
 
-    panel.desc = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.desc:SetPoint("TOPLEFT", panel.specText, "BOTTOMLEFT", 0, -8)
-    panel.desc:SetWidth(PANEL_W - 32)
-    panel.desc:SetJustifyH("LEFT")
-    panel.desc:SetText(L("PAGE_DESC"))
-
     panel.combatWarning = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.combatWarning:SetPoint("TOPLEFT", panel.desc, "BOTTOMLEFT", 0, -8)
+    panel.combatWarning:SetPoint("TOPLEFT", panel.specText, "BOTTOMLEFT", 0, -6)
     panel.combatWarning:SetTextColor(1, 0.3, 0.3)
     panel.combatWarning:SetText(L("COMBAT_LOCKED"))
     panel.combatWarning:Hide()
 
-    panel.rows = CreateFrame("Frame", nil, panel)
-    panel.rows:SetPoint("TOPLEFT", 8, -HEADER_H)
-    panel.rows:SetSize(ROW_W, ROW_H)
+    panel.desc = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    panel.desc:SetPoint("TOPLEFT", panel.combatWarning, "BOTTOMLEFT", 0, -8)
+    panel.desc:SetWidth(PANEL_W - 32)
+    panel.desc:SetJustifyH("LEFT")
+    panel.desc:SetText(L("PAGE_DESC"))
 
     panel.noAuras = panel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    panel.noAuras:SetPoint("TOPLEFT", 16, -(HEADER_H + 4))
+    panel.noAuras:SetPoint("TOPLEFT", panel.desc, "BOTTOMLEFT", 0, -14)
     panel.noAuras:SetWidth(PANEL_W - 32)
     panel.noAuras:SetJustifyH("LEFT")
     panel.noAuras:SetText(L("NO_AURAS"))
     panel.noAuras:Hide()
+
+    panel.rows = CreateFrame("Frame", nil, panel)
+    panel.rows:SetPoint("TOPLEFT", panel.desc, "BOTTOMLEFT", 8, -14)
+    panel.rows:SetSize(ROW_W, ROW_H)
 
     -- 设置页显隐：驱动主文件的低频签名巡检（面板打开时保持 CDM 列表最新）
     panel:SetScript("OnShow", function()

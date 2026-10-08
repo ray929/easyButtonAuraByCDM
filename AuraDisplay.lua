@@ -91,6 +91,25 @@ end
 -- =========================================================
 -- 容器创建（暴雪 AuraContainer；只在脱战时创建，战斗中延后）
 -- =========================================================
+-- 决定容器的追踪单位 + 过滤串。
+--   · 单位取自 CDM item frame 的明文 auraDataUnit（缺省 player）——CDM 的增益/减益条目
+--     可能追踪的是目标身上的光环（如自己的 DoT），固定用 player 会永远匹配不到。
+--   · 过滤串必须与「includeSpellIDs 何时被暴雪允许」一致，否则 includeSpellIDs 被忽略，
+--     槽位会匹配到任意光环 → 显示错误数值。规则见
+--     Blizzard_AuraContainerUtil.CanApplyIdentityCandidateFilters（核实 2026-10-08，wow-ui-source live）：
+--       harmful 且 UnitCanAssist("player", unit)  → includeSpellIDs 被忽略（自身/友方身上的减益）
+--       helpful 且 不可协助的 unit               → includeSpellIDs 被忽略（敌方身上的增益）
+--     故：可协助单位用 "HELPFUL"，不可协助（敌方）用 "HARMFUL"，两种情况 includeSpellIDs 均生效。
+local function ResolveUnitAndFilter(spellID)
+    local unit = (B.GetAuraUnit and B.GetAuraUnit(spellID)) or "player"
+    local assistable = true
+    local ok, res = pcall(UnitCanAssist, "player", unit)
+    if ok and res ~= nil and not B.IsSecret(res) and type(res) == "boolean" then
+        assistable = res
+    end
+    return unit, (assistable and "HELPFUL" or "HARMFUL")
+end
+
 local function BuildContainer(e)
     local spellID = e.spellID
     local includeSpellIDs = { [spellID] = true }
@@ -100,18 +119,22 @@ local function BuildContainer(e)
         for _, id in ipairs(buff.ids) do includeSpellIDs[id] = true end
     end
 
+    local unit, filterString = ResolveUnitAndFilter(spellID)
+
     local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
     container:SetFrameStrata("HIGH")
     container:SetFrameLevel(900)
     container:SetSize(36, 36)
-    container:SetUnit("player")
+    container:SetUnit(unit)
     container:SetEnabled(true)
     container:EnableMouse(false)   -- 覆盖在动作按钮之上，绝不拦截点击（自有帧，非受保护帧，安全）
     e.container = container
+    e.unit = unit
+    e.filterString = filterString
 
     -- ⚠️ initializeFrame 是【同步】回调，回调里 e.container 必须已就绪
     local ok = pcall(function()
-        container:AddAuraSlot("ebac", "HELPFUL", {
+        container:AddAuraSlot("ebac", filterString, {
             candidateFilters = { includeSpellIDs = includeSpellIDs },
             initializeFrame = function(btn)
                 btn:SetAllPoints(container)
@@ -142,13 +165,18 @@ local function BuildContainer(e)
         return false
     end
     e._initFailed = nil
+    -- 重建后子控件是全新的、且容器尚未定位 → 清掉布局 / 位置缓存，强制下一次 UpdateEntry 重新摆放
+    e._layoutKey = nil
+    e._rectL, e._rectB, e._rectW, e._rectH = nil, nil, nil, nil
     container:Show()
     return true
 end
 
 local function EnsureEntry(spellID)
     local e = entries[spellID]
-    if e and e.auraButton then return e end
+    local wantUnit = (B.GetAuraUnit and B.GetAuraUnit(spellID)) or "player"
+    -- 单位变了（CDM 条目被改配置）→ 重建容器
+    if e and e.auraButton and e.unit == wantUnit then return e end
     if InCombatLockdown() then
         -- 战斗中不新建容器（等脱战后由 PLAYER_REGEN_ENABLED 补建）
         if not e then entries[spellID] = { spellID = spellID } end
@@ -159,9 +187,10 @@ local function EnsureEntry(spellID)
         entries[spellID] = e
     end
     if e.container then
-        -- 上次 AddAuraSlot 失败，重建容器再试
+        -- 上次 AddAuraSlot 失败 / 单位变化：重建容器
         e.container:Hide()
         e.container = nil
+        e.auraButton, e.cd, e.fs = nil, nil, nil
     end
     if not BuildContainer(e) then return nil end
     return e
@@ -322,6 +351,7 @@ local function UpdateEntry(e, btn)
         e._rectL, e._rectB, e._rectW, e._rectH = left, bottom, width, height
     end
     e.container:SetSize(cw, ch)
+    e.container:Show()   -- 保持可见以接收 UNIT_AURA（ShouldRegisterForDynamicEvents = IsVisible and IsEnabled）
 
     -- 子控件布局：几何 / 选项未变则跳过（子控件用绝对屏幕坐标，容器尺寸变化不影响它们）
     local key = table.concat({ timePos, stackPos, rx, ry, cw, ch }, ":")

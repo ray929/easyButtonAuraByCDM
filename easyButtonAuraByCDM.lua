@@ -30,8 +30,6 @@ local LOCALES = {
         PAGE_DESC         = "Bind auras from Blizzard's Cooldown Manager to action bar buttons. The Cooldown Manager display itself is left untouched.",
         NO_AURAS          = "No auras found. Enable buffs in Blizzard's Cooldown Manager (Buffs) first, then reopen this page.",
         COL_BIND          = "Bind",
-        BTN_SELF          = "Self",
-        BTN_SELF_TIP      = "Bind to this aura's own spell.",
         POS_DEFAULT       = "Default",
         POS_UP            = "Up",
         POS_DOWN          = "Down",
@@ -54,8 +52,6 @@ local LOCALES = {
         PAGE_DESC         = "把暴雪冷却管理器中的增益光环手动绑定到动作条按钮。冷却管理器本身的显示保持原样。",
         NO_AURAS          = "未找到可绑定的光环。请先在暴雪冷却管理器的「增益」里启用要追踪的光环，然后重新打开本页面。",
         COL_BIND          = "绑定",
-        BTN_SELF          = "自身",
-        BTN_SELF_TIP      = "绑定到该光环自身的法术。",
         POS_DEFAULT       = "默认",
         POS_UP            = "上",
         POS_DOWN          = "下",
@@ -78,8 +74,6 @@ local LOCALES = {
         PAGE_DESC         = "把暴雪冷卻管理器中的增益光環手動綁定到快捷列按鈕。冷卻管理器本身的顯示維持原樣。",
         NO_AURAS          = "找不到可綁定的光環。請先在暴雪冷卻管理器的「增益」中啟用要追蹤的光環，然後重新開啟本頁面。",
         COL_BIND          = "綁定",
-        BTN_SELF          = "自身",
-        BTN_SELF_TIP      = "綁定到該光環本身的法術。",
         POS_DEFAULT       = "預設",
         POS_UP            = "上",
         POS_DOWN          = "下",
@@ -216,8 +210,30 @@ local function CollectItemSpellIDs(info)
     return result
 end
 
--- 写入 knownBuffs（重复出现时只刷新名称 / 图标 / 候选表）
-local function RegisterBuff(spellID, ids)
+-- 读取 CDM item frame 的追踪单位（明文）。
+-- CDM item frame 上有明文字段 auraDataUnit（如 "player" / "target"）；
+-- 取不到时回退 cooldownInfo.selfAura（明文布尔：true=自身，false=目标）。
+-- 绝对不读 frame.auraSpellID 等 secret 字段。
+local function FrameAuraUnit(f)
+    if not f then return nil end
+    local unit = f.auraDataUnit
+    if unit ~= nil and not IsSecret(unit) and type(unit) == "string" and unit ~= "" then
+        return unit
+    end
+    local ok, sel = pcall(function()
+        local ci = f.cooldownInfo
+        return ci and ci.selfAura
+    end)
+    if ok then
+        local v = ReadBool(sel)
+        if v == true then return "player" end
+        if v == false then return "target" end
+    end
+    return nil
+end
+
+-- 写入 knownBuffs（重复出现时只刷新名称 / 图标 / 候选表 / 单位）
+local function RegisterBuff(spellID, ids, unit)
     if not spellID or IsSecret(spellID) then return end
     local okInfo, spellInfo = pcall(C_Spell.GetSpellInfo, spellID)
     if not okInfo or not spellInfo or not spellInfo.name then return end
@@ -231,6 +247,13 @@ local function RegisterBuff(spellID, ids)
         b.icon = spellInfo.iconID or b.icon
     end
     b.ids = ids or b.ids
+    b.unit = unit or b.unit
+end
+
+-- 某 CDM 增益的追踪单位（缺省 player）
+function B.GetAuraUnit(spellID)
+    local b = B.knownBuffs and B.knownBuffs[spellID]
+    return (b and b.unit) or "player"
 end
 
 -- 取查看器的当前活动帧。
@@ -294,7 +317,7 @@ local function ScanViewerFrames()
                         if spellID and not IsSecret(spellID) then
                             local ids = CollectItemSpellIDs(info)
                             if AURA_VIEWERS[viewerName] then
-                                RegisterBuff(spellID, ids)
+                                RegisterBuff(spellID, ids, FrameAuraUnit(f))
                             end
                             f.__EBACSpellID = spellID
                             f.__EBACSpellIDs = ids
@@ -374,7 +397,7 @@ local function EnsureHooks()
                     if not spellID or IsSecret(spellID) then return end
                     local ids = CollectItemSpellIDs(info)
                     if AURA_VIEWERS[viewerName] then
-                        RegisterBuff(spellID, ids)
+                        RegisterBuff(spellID, ids, FrameAuraUnit(f))
                     end
                     f.__EBACSpellID = spellID
                     f.__EBACSpellIDs = ids
