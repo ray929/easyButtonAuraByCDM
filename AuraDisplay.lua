@@ -210,10 +210,10 @@ end
 -- =========================================================
 -- 倒计时框锚定：一律用【绝对屏幕坐标】锚到 UIParent。
 -- AuraContainer 的 flow layout 会在光环变化时异步覆盖容器尺寸，若相对容器 / 按钮锚定会跟着错位。
-local function ApplyCdLayout(e, rx, ry, cw, ch, timePos)
+local function ApplyCdLayout(e, rx, ry, cw, ch, timePos, visible)
     local cd = e.cd
     if not cd then return end
-    if timePos == "none" then
+    if timePos == "none" or visible == false then
         cd:SetAlpha(0)
         return
     end
@@ -238,10 +238,10 @@ local function ApplyCdLayout(e, rx, ry, cw, ch, timePos)
     end
 end
 
-local function ApplyFsLayout(e, rx, ry, cw, ch, stackPos)
+local function ApplyFsLayout(e, rx, ry, cw, ch, stackPos, visible)
     local fs = e.fs
     if not fs then return end
-    if stackPos == "none" then
+    if stackPos == "none" or visible == false then
         fs:SetAlpha(0)
         return
     end
@@ -292,7 +292,11 @@ end
 local function AuraPresent(e, item)
     local f = item or (B.FindFrameForSpell and B.FindFrameForSpell(e.spellID))
     if f then e.frame = f end
-    local v = B.IsItemActive(f)
+    -- 优先 CDM item 的明文 IsActive()；当前帧找不到时，退回上次缓存帧（需校验其仍属于本 spell，
+    -- 否则 CDM 复用帧会读到别的光环的状态）。
+    local probe = f
+    if not probe and e.frame and e.frame.__EBACSpellID == e.spellID then probe = e.frame end
+    local v = B.IsItemActive(probe)
     if v == nil and e.auraButton then
         local ok, shown = pcall(function() return e.auraButton:IsShown() end)
         if ok then v = ReadBool(shown) end
@@ -315,6 +319,12 @@ end
 -- =========================================================
 -- 单个条目的显示 / 停靠
 -- =========================================================
+-- 收起倒计时 / 层数（alpha 0，不用 Hide：不与暴雪驱动争抢显隐）
+local function HideNumbers(e)
+    if e.cd then e.cd:SetAlpha(0) end
+    if e.fs then e.fs:SetAlpha(0) end
+end
+
 local function HideEntry(e)
     if not e.container then return end
     if e._rectL ~= DOCK_X then
@@ -323,8 +333,7 @@ local function HideEntry(e)
         e._rectL = DOCK_X
         e._rectB, e._rectW, e._rectH = nil, nil, nil
     end
-    if e.cd then e.cd:SetAlpha(0) end
-    if e.fs then e.fs:SetAlpha(0) end
+    HideNumbers(e)
     SetGlowMode(e, "none")
     e.visible = false
 end
@@ -343,6 +352,11 @@ local function UpdateEntry(e, btn)
 
     local timePos, stackPos, glowOn, inverseOn = B.GetDisplayOptions(e.spellID)
 
+    -- 光环是否存在：不存在时必须把数字 / 层数收起。暴雪只会在【自己】单位的 AuraButton 上
+    -- 清掉 duration cooldown；目标 debuff 消失（切目标 / 翻页）后不会清我们的倒计时 → 数字滞留。
+    local present = AuraPresent(e)
+    local showNum = (present ~= false)
+
     -- 容器：自有帧，SetPoint / SetSize 战斗安全。
     -- 位置可缓存；尺寸每次都设（对抗 AuraContainer flow layout 的异步尺寸覆盖）。
     if e._rectL ~= left or e._rectB ~= bottom or e._rectW ~= width or e._rectH ~= height then
@@ -353,18 +367,18 @@ local function UpdateEntry(e, btn)
     e.container:SetSize(cw, ch)
     e.container:Show()   -- 保持可见以接收 UNIT_AURA（ShouldRegisterForDynamicEvents = IsVisible and IsEnabled）
 
-    -- 子控件布局：几何 / 选项未变则跳过（子控件用绝对屏幕坐标，容器尺寸变化不影响它们）
-    local key = table.concat({ timePos, stackPos, rx, ry, cw, ch }, ":")
+    -- 子控件布局：几何 / 选项 / 显隐未变则跳过（子控件用绝对屏幕坐标，容器尺寸变化不影响它们）
+    local key = table.concat({ timePos, stackPos, rx, ry, cw, ch, showNum and "1" or "0" }, ":")
     if e._layoutKey ~= key then
         e._layoutKey = key
-        ApplyCdLayout(e, rx, ry, cw, ch, timePos)
-        ApplyFsLayout(e, rx, ry, cw, ch, stackPos)
+        ApplyCdLayout(e, rx, ry, cw, ch, timePos, showNum)
+        ApplyFsLayout(e, rx, ry, cw, ch, stackPos, showNum)
         if e.glow then PositionGlow(e, rx, ry, cw, ch) end
     end
 
     ApplyCountdownFont(e)
-    e.visible = true
-    ApplyGlow(e, AuraPresent(e), glowOn, inverseOn)
+    e.visible = showNum
+    ApplyGlow(e, present, glowOn, inverseOn)
 end
 
 -- =========================================================
@@ -418,6 +432,21 @@ function B.RebuildEntries()
     end
 
     B.RefreshAll()
+end
+
+-- 翻页 / 换技能后按钮会被改作他用：撤下覆盖层，避免数字滞留在不再对应本绑定的按钮上。
+-- 由主文件低频巡检调用（事件可能漏触发，这里做兜底）。match 为 nil（无法判定）时不动。
+function B.HideStaleEntries()
+    for spellID, e in pairs(entries) do
+        if e.buttonName and e.container then
+            local match = B.ButtonMatchesBinding and B.ButtonMatchesBinding(e.buttonName, spellID)
+            if match == false then
+                e.button, e.buttonName = nil, nil
+                e._layoutKey = nil
+                HideEntry(e)
+            end
+        end
+    end
 end
 
 -- 全量刷新：重定位 + 同步发光（登录 / 切换专精 / 动作条变动 / 光环增删 / 定时兜底）

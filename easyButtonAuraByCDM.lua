@@ -496,6 +496,18 @@ function B.BuildSpellButtonMap()
     return map
 end
 
+-- 某按钮当前所载技能是否仍等于该绑定的目标技能。
+-- true / false（不匹配，按钮已被翻页或换技能改作他用）/ nil（无法判定，勿据此隐藏）。
+function B.ButtonMatchesBinding(buttonName, auraSpellID)
+    if not buttonName then return nil end
+    local cfg = B.GetBinding(auraSpellID)
+    local target = cfg and cfg.bindSpell
+    if not target then return nil end
+    local sid = GetButtonSpellID(buttonName)
+    if not sid then return nil end
+    return sid == target
+end
+
 -- =========================================================
 -- 技能名 / ID 解析与显示
 -- =========================================================
@@ -669,7 +681,10 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-eventFrame:RegisterUnitEvent("UNIT_AURA", "player")
+-- 追踪 player（自身 buff / 自身减益）与 target（自己挂在目标身上的 DoT 等）
+eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+-- 切目标：CDM 的条目会随之变化，覆盖层必须重新判定「光环是否还在」
+eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 for ev in pairs(actionbarEvents) do eventFrame:RegisterEvent(ev) end
 
 eventFrame:SetScript("OnEvent", function(_, event)
@@ -683,8 +698,8 @@ eventFrame:SetScript("OnEvent", function(_, event)
         C_Timer.After(0.5, function() EnsureHooks(); B.Rescan() end)
     elseif event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
         B.SelectSpec()
-    elseif event == "UNIT_AURA" then
-        -- 光环增删 → 防抖刷新（发光 / 反发光即时纠正）
+    elseif event == "UNIT_AURA" or event == "PLAYER_TARGET_CHANGED" then
+        -- 光环增删 / 切目标 → 防抖刷新（数字显隐 + 发光 / 反发光即时纠正）
         B.ScheduleRefresh(0.2)
     elseif actionbarEvents[event] then
         -- 延迟 0.1s：等动作条布局完成后再读按钮坐标 / 重算匹配
@@ -713,4 +728,6 @@ C_Timer.NewTicker(1.0, function()
         lastSignature = sig
         B.Rescan()
     end
+    -- 兜底：翻页 / 换技能后按钮被改作他用时，撤下滞留在该按钮上的覆盖层
+    if B.HideStaleEntries then B.HideStaleEntries() end
 end)
