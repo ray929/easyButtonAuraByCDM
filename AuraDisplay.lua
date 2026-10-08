@@ -32,7 +32,7 @@ local function ReadBool(v)
 end
 
 -- =========================================================
--- 发光覆盖层（零依赖自绘，替代 LibCustomGlow）
+-- 发光覆盖层（手写自绘；本插件未引入 LibCustomGlow）
 -- =========================================================
 local function EnsureGlow(e)
     if e.glow then return e.glow end
