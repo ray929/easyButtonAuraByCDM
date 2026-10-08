@@ -13,6 +13,7 @@
 ## Category-zhCN: 动作条
 ## Category-zhTW: 快捷列
 ## IconTexture: Interface\AddOns\easyButtonAuraByCDM\Icon.tga
+## X-Curse-Project-ID: 1733477
 
 Libs\LibStub\LibStub.lua
 Libs\LibCustomGlow-1.0\LibCustomGlow-1.0.lua
