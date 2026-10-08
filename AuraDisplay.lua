@@ -106,6 +106,7 @@ local function BuildContainer(e)
     container:SetSize(36, 36)
     container:SetUnit("player")
     container:SetEnabled(true)
+    container:EnableMouse(false)   -- 覆盖在动作按钮之上，绝不拦截点击（自有帧，非受保护帧，安全）
     e.container = container
 
     -- ⚠️ initializeFrame 是【同步】回调，回调里 e.container 必须已就绪
