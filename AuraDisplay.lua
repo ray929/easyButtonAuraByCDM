@@ -9,15 +9,13 @@
 --     不读任何光环数值 → 战斗中照常显示、零 secret 读取。
 --   · CDM 的原有显示完全不动（既不隐藏也不移动），只按 spellID 读取
 --     CDM item 的明文 IsActive() 作为「光环是否激活」的信号，驱动发光 / 反发光。
---   · 容器与发光帧都只挂 UIParent，用按钮的屏幕坐标（GetRect）定位，
---     绝不把坐标锚到安全动作按钮上（否则 taint 传播 → 进战斗整片消失）。
+--   · 数字容器只挂 UIParent，用按钮的屏幕坐标（GetRect）定位，绝不把坐标锚到安全动作按钮上
+--     （否则 taint 传播 → 进战斗整片消失）；发光改由内嵌 LibCustomGlow-1.0 的 Proc Glow 挂在按钮上。
 --   · 战斗中绝不重建 / 销毁容器（新建只在脱战后进行），战斗中只做定位与发光更新。
 
 local B = EasyButtonAuraByCDM
 local S = B.Style
 
-local GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
-local GLOW_SCALE = 1.45      -- 发光贴图相对按钮的放大倍数（向外溢出形成光晕）
 local DOCK_X, DOCK_Y = -10000, -10000
 
 -- spellID -> entry
@@ -32,60 +30,40 @@ local function ReadBool(v)
 end
 
 -- =========================================================
--- 发光覆盖层（手写自绘；本插件未引入 LibCustomGlow）
+-- 发光：LibCustomGlow-1.0 的 Proc Glow（内嵌库，见 Libs/）
 -- =========================================================
-local function EnsureGlow(e)
-    if e.glow then return e.glow end
-    local f = CreateFrame("Frame", nil, UIParent)
-    f:SetFrameStrata("HIGH")
-    f:SetFrameLevel(950)
-    f:SetSize(36, 36)
+local LCG = B.LCG
+local GLOW_KEY = "EBAC"   -- LCG key：Start / Stop 必须一致，否则发光帧残留
 
-    local tex = f:CreateTexture(nil, "OVERLAY")
-    tex:SetTexture(GLOW_TEXTURE)
-    tex:SetBlendMode("ADD")
-    tex:SetPoint("CENTER", f, "CENTER")
-    tex:SetSize(36, 36)
-    f.tex = tex
-
-    -- 呼吸式发光：alpha 0.30 <-> 1.00 + 轻微缩放
-    local ag = f:CreateAnimationGroup()
-    ag:SetLooping("BOUNCE")
-    local a = ag:CreateAnimation("Alpha")
-    a:SetFromAlpha(0.30)
-    a:SetToAlpha(1.00)
-    a:SetSmoothing("IN_OUT")
-    a:SetDuration(0.45)
-    a:SetOrder(1)
-    local sc = ag:CreateAnimation("Scale")
-    sc:SetScaleFrom(0.92, 0.92)
-    sc:SetScaleTo(1.06, 1.06)
-    sc:SetSmoothing("IN_OUT")
-    sc:SetDuration(0.45)
-    sc:SetOrder(1)
-    f.ag = ag
-
-    f:Hide()
-    e.glow = f
-    return f
+-- 停掉当前挂在 e._glowBtn 上的发光。必须先停旧键再换按钮，
+-- 否则改绑 / 换页后旧按钮上的发光帧会永久残留。
+local function StopGlow(e)
+    if not LCG then return end
+    local btn = e._glowBtn
+    if not btn then return end
+    pcall(LCG.ProcGlow_Stop, btn, GLOW_KEY)
+    e._glowBtn = nil
 end
 
 -- mode: "none" | "on"（光环存在，青色） | "inverse"（光环缺失，亮红）
+-- 按钮变化（改绑 / 翻页换技能）时即使 mode 未变也要重挂，故一并比较 _glowBtn。
 local function SetGlowMode(e, mode)
-    if e._glowMode == mode then return end
+    local btn = e.button
+    if e._glowMode == mode and (mode == "none" or e._glowBtn == btn) then return end
     e._glowMode = mode
-    if mode == "none" then
-        if e.glow then
-            e.glow.ag:Stop()
-            e.glow:Hide()
-        end
+    if not LCG then return end
+    if mode == "none" or not btn then
+        StopGlow(e)
         return
     end
-    local f = EnsureGlow(e)
+    if e._glowBtn and e._glowBtn ~= btn then StopGlow(e) end
     local c = (mode == "inverse") and S.INVERSE_GLOW_COLOR or S.GLOW_COLOR
-    f.tex:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
-    f:Show()
-    if not f.ag:IsPlaying() then f.ag:Play() end
+    pcall(LCG.ProcGlow_Start, btn, {
+        key = GLOW_KEY,
+        startAnim = true,
+        color = { c[1], c[2], c[3], c[4] or 1 },
+    })
+    e._glowBtn = btn
 end
 
 -- =========================================================
@@ -261,15 +239,6 @@ local function ApplyFsLayout(e, rx, ry, cw, ch, stackPos, visible)
     end
 end
 
-local function PositionGlow(e, rx, ry, cw, ch)
-    local f = e.glow
-    if not f then return end
-    f:ClearAllPoints()
-    f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", rx, ry + ch)
-    f:SetSize(cw, ch)
-    f.tex:SetSize(cw * GLOW_SCALE, ch * GLOW_SCALE)
-end
-
 -- 倒计时数字的 FontString 要等暴雪首次驱动后才有；低频轮询，设置一次即标记完成
 local function ApplyCountdownFont(e)
     local cd = e.cd
@@ -373,7 +342,6 @@ local function UpdateEntry(e, btn)
         e._layoutKey = key
         ApplyCdLayout(e, rx, ry, cw, ch, timePos, showNum)
         ApplyFsLayout(e, rx, ry, cw, ch, stackPos, showNum)
-        if e.glow then PositionGlow(e, rx, ry, cw, ch) end
     end
 
     ApplyCountdownFont(e)

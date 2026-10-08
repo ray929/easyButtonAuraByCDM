@@ -11,13 +11,17 @@
 --   · 绝不隐藏 / 移动 CDM 的原有显示。CDM 只被【只读】使用（取已启用增益列表 +
 --     判断光环当前是否激活）；按钮上的倒计时 / 层数改用暴雪 12.1 的 AuraContainer 自绘，
 --     不再 reparent CDM 已渲染对象，也不再把 CDM 图标移出屏幕。
---   · 当前未引入第三方库（发光手写自绘）；后续可接入成熟库（内嵌 Libs/ + .toc 显式加载）。
+--   · 发光用内嵌的 LibCustomGlow-1.0（Proc Glow）；本地化仍为自维护纯 Lua 表。
+--     库文件内嵌在本插件 Libs/ 下（LibStub + LibCustomGlow-1.0），.toc 先于本文件加载。
 --   · 无 slash 命令；设置界面集成进暴雪自带插件设置（战斗中禁止修改）。
 --   · 12.x secret 值红线：一律 issecretvalue 判定，不比较 secret 数值，外部数据 pcall 兜底。
 
 EasyButtonAuraByCDM = EasyButtonAuraByCDM or {}
 local B = EasyButtonAuraByCDM
 B.ADDON_NAME = ...
+
+-- 内嵌库：LibStub + LibCustomGlow-1.0（.toc 已先于本文件加载）
+B.LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 -- =========================================================
 -- 本地化（自维护纯 Lua 表；本插件未引入本地化库）
