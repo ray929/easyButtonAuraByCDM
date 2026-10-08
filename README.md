@@ -8,6 +8,7 @@
 - The aura's remaining time and stack count are shown on that button.
 - Optional glow while the aura is active, and an optional red alert when it is missing.
 - Configuration lives in its own window: open it with `/babc`, or from the add-on's page in Blizzard's settings.
+- A global switch in the configuration window turns all bindings on or off at once (character-wide, not per specialization).
 - Settings can only be changed out of combat; the configuration window is hidden during combat and restored afterwards.
 - Works during combat. The original Cooldown Manager display is left untouched.
 
@@ -19,6 +20,7 @@
 - 在该按钮上显示该光环的剩余时间与层数。
 - 可选：光环存在时发光提醒；光环缺失时红色提醒（反发光）。
 - 配置在独立窗口中完成：输入 `/babc` 打开，或从暴雪插件设置里本插件的页面打开。
+- 配置窗口右上角有一个全局开关：一键启用或停用全部绑定（角色级，不分专精）。
 - 设置需在战斗外修改；战斗中配置窗口会自动隐藏，战斗结束恢复。
 - 战斗中同样生效。冷却管理器原本的显示保持原样，不会被隐藏或移动。
 
@@ -30,6 +32,7 @@
 - 在該按鈕上顯示該光環的剩餘時間與堆疊數量。
 - 可選：光環存在時發光提醒；光環缺失時紅色提醒（反發光）。
 - 設定在獨立視窗中完成：輸入 `/babc` 開啟，或從暴雪插件設定裡本插件的頁面開啟。
+- 設定視窗右上角有一個全域開關：一鍵啟用或停用全部綁定（角色層級，不分專精）。
 - 設定需在戰鬥外修改；戰鬥中設定視窗會自動隱藏，戰鬥結束後恢復。
 - 戰鬥中同樣有效。冷卻管理器原本的顯示維持原樣，不會被隱藏或移動。
 
