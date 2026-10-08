@@ -8,6 +8,7 @@
 - The aura's remaining time and stack count are shown on that button.
 - Optional glow while the aura is active, and an optional red alert when it is missing.
 - A single settings page, built into Blizzard's own add-on settings; no slash commands.
+- Settings can only be changed out of combat; the settings page is locked during combat.
 - Works during combat. The original Cooldown Manager display is left untouched.
 
 ## 简体中文
@@ -18,6 +19,7 @@
 - 在该按钮上显示该光环的剩余时间与层数。
 - 可选：光环存在时发光提醒；光环缺失时红色提醒（反发光）。
 - 只有一个设置界面，集成在暴雪自带的插件设置里；不使用斜杠命令。
+- 设置需在战斗外修改；战斗中设置页会被锁定。
 - 战斗中同样生效。冷却管理器原本的显示保持原样，不会被隐藏或移动。
 
 ## 繁體中文
@@ -28,6 +30,7 @@
 - 在該按鈕上顯示該光環的剩餘時間與堆疊數量。
 - 可選：光環存在時發光提醒；光環缺失時紅色提醒（反發光）。
 - 只有一個設定介面，整合在暴雪內建的插件設定中；不使用斜線指令。
+- 設定需在戰鬥外修改；戰鬥中設定頁面會被鎖定。
 - 戰鬥中同樣有效。冷卻管理器原本的顯示維持原樣，不會被隱藏或移動。
 
 ## Credits / 致谢 / 致謝
