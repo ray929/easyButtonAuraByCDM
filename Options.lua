@@ -11,23 +11,35 @@
 --
 -- 布局约定：所有控件的坐标都是【相对 row 的绝对坐标】，不互相链式锚定，
 -- 保证行与行、控件与控件严格对齐且不重叠（链式锚定曾被反馈「错位」）。
+--
+-- 列表区为【固定高度 + 滚动条】：可见 VISIBLE_ROWS 行，行数超出即出现暴雪原生滚动条
+-- （支持鼠标滚轮），窗口高度不随行数增长。
 
 local B = EasyButtonAuraByCDM
 local L = B.L
 
--- 配置窗口宽度：过宽会超出小屏，行内控件按固定列排布
-local PANEL_W = 520
-local ROW_W   = PANEL_W - 16
+-- 配置窗口宽度：过宽会超出小屏，行内控件按固定列排布。
+-- ROW_W 额外扣掉右侧留给暴雪滚动条的空间（UIPanelScrollFrameTemplate 的滚动条
+-- 叠在滚动区右缘约 16px），否则最右侧的「反发光」文字会被滚动条压住 / 裁掉。
+local PANEL_W = 640
+local ROW_W   = PANEL_W - 40
 local ROW_H   = 56
 
+-- 列表区固定高度（可见行数），行数超过即出现滚动条，窗口高度不再随行数增长
+local VISIBLE_ROWS = 7
+local LIST_H = VISIBLE_ROWS * ROW_H
+
 -- 行内第二行控件的横坐标（相对 row 左侧）与宽度
-local X_EDIT,    W_EDIT    = 44, 108
-local X_TIME,    W_TIME    = 160, 86
-local X_STACK,   W_STACK   = 254, 94
-local X_GLOW,    X_INVERSE = 358, 426
+local X_EDIT,    W_EDIT    = 54, 128
+local X_TIME,    W_TIME    = 196, 104
+local X_STACK,   W_STACK   = 312, 108
+local X_GLOW,    X_INVERSE = 436, 508
 
 -- 暴雪设置分类名 / 配置窗口标题：不本地化，固定用插件名（用户指定）
 local ADDON_TITLE = "Easy Button Aura by CDM"
+
+-- 暴雪设置里的占位页宽度：与配置窗口宽度无关，用较小值避免超出暴雪设置画布
+local STUB_W = 520
 
 local configFrame
 local rows = {}          -- 行池（复用）
@@ -294,14 +306,22 @@ local function DoRefresh()
     end
 
     local count = math.max(#list, 1)
-    configFrame.noAuras:SetShown(#list == 0)
+    -- 空列表：隐藏滚动区（其自带底板会盖住提示文字），只显示提示
+    local empty = (#list == 0)
+    configFrame.noAuras:SetShown(empty)
+    configFrame.scroll:SetShown(not empty)
     configFrame.rows:SetSize(ROW_W, count * ROW_H)
+    -- 内容尺寸变化后让 ScrollFrame 重算滚动范围（超出即自动显示滚动条，否则隐藏）
+    if configFrame.scroll.UpdateScrollChildRect then
+        pcall(configFrame.scroll.UpdateScrollChildRect, configFrame.scroll)
+    end
 
-    -- 窗口高度 = 顶部（窗口顶 → 行区域顶） + 行区域 + 底部留白。
+    -- 窗口高度 = 顶部（窗口顶 → 滚动区顶） + 固定列表高度 + 底部留白。
     -- 顶部高度取运行时实际几何（提示文字行数会随语言变化，不能用常量）；几何不可用时用兜底值。
-    local pTop, rTop = configFrame:GetTop(), configFrame.rows:GetTop()
+    -- 列表高度固定为 LIST_H：行数再多也只出滚动条，窗口不会无限加长。
+    local pTop, rTop = configFrame:GetTop(), configFrame.scroll:GetTop()
     local headerH = (pTop and rTop and pTop > rTop) and (pTop - rTop) or 130
-    configFrame:SetSize(PANEL_W, headerH + count * ROW_H + 20)
+    configFrame:SetSize(PANEL_W, headerH + LIST_H + 20)
 
     return list
 end
@@ -352,9 +372,24 @@ local function BuildConfigFrame()
     configFrame.noAuras:SetText(L("NO_AURAS"))
     configFrame.noAuras:Hide()
 
-    configFrame.rows = CreateFrame("Frame", nil, configFrame)
-    configFrame.rows:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 8, -14)
-    configFrame.rows:SetSize(ROW_W, ROW_H)
+    -- 列表区：固定高度的滚动区（行数超过可见行数时出现滚动条，支持鼠标滚轮）
+    configFrame.scroll = CreateFrame("ScrollFrame", "EasyButtonAuraByCDMConfigScroll", configFrame, "UIPanelScrollFrameTemplate")
+    configFrame.scroll:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 8, -14)
+    configFrame.scroll:SetSize(ROW_W, LIST_H)
+    configFrame.scroll:EnableMouseWheel(true)
+    configFrame.scroll:SetScript("OnMouseWheel", function(self, delta)
+        local bar = self.scrollBar
+        if not bar or not bar:IsShown() then return end
+        local lo, hi = bar:GetMinMaxValues()
+        local v = (bar:GetValue() or 0) - delta * ROW_H
+        if v < lo then v = lo elseif v > hi then v = hi end
+        bar:SetValue(v)
+    end)
+
+    configFrame.rows = CreateFrame("Frame", nil, configFrame.scroll)
+    configFrame.rows:SetPoint("TOPLEFT", configFrame.scroll, "TOPLEFT", 0, 0)
+    configFrame.rows:SetSize(ROW_W, LIST_H)
+    configFrame.scroll:SetScrollChild(configFrame.rows)
 
     -- 窗口显隐：驱动主文件的低频签名巡检（窗口打开时保持 CDM 列表最新）
     configFrame:SetScript("OnShow", function()
@@ -409,7 +444,7 @@ end
 -- =========================================================
 local function BuildBlizzardStub()
     local stub = CreateFrame("Frame")
-    stub:SetSize(PANEL_W, 200)
+    stub:SetSize(STUB_W, 200)
 
     -- canvas layout 要求的三函数：本页无实际设置，故均为空实现
     stub.OnCommit  = function() end
@@ -418,7 +453,7 @@ local function BuildBlizzardStub()
 
     local hint = stub:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hint:SetPoint("TOP", stub, "TOP", 0, -40)
-    hint:SetWidth(PANEL_W - 40)
+    hint:SetWidth(STUB_W - 40)
     hint:SetJustifyH("CENTER")
     hint:SetText(L("STUB_HINT"))
 
