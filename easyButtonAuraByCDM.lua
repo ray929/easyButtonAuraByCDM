@@ -36,8 +36,8 @@ local LOCALES = {
         POS_LEFT          = "Left",
         POS_RIGHT         = "Right",
         POS_NONE          = "None",
-        TIME_FMT          = "Time: %s",
-        STACK_FMT         = "Stacks: %s",
+        COL_TIME          = "Time",
+        COL_STACK         = "Stacks",
         GLOW              = "Glow",
         GLOW_TIP          = "Glow the button while the aura is active.",
         INVERSE           = "Missing",
@@ -58,8 +58,8 @@ local LOCALES = {
         POS_LEFT          = "左",
         POS_RIGHT         = "右",
         POS_NONE          = "无",
-        TIME_FMT          = "时间：%s",
-        STACK_FMT         = "层数：%s",
+        COL_TIME          = "时间",
+        COL_STACK         = "层数",
         GLOW              = "发光",
         GLOW_TIP          = "光环存在时按钮发光。",
         INVERSE           = "反发光",
@@ -80,8 +80,8 @@ local LOCALES = {
         POS_LEFT          = "左",
         POS_RIGHT         = "右",
         POS_NONE          = "無",
-        TIME_FMT          = "時間：%s",
-        STACK_FMT         = "堆疊：%s",
+        COL_TIME          = "時間",
+        COL_STACK         = "堆疊",
         GLOW              = "發光",
         GLOW_TIP          = "光環存在時按鈕發光。",
         INVERSE           = "反發光",
@@ -541,7 +541,7 @@ end
 
 -- =========================================================
 -- 存档：按专精存储
--- EasyButtonAuraByCDMDB.specs[specID] = { bindings = { [auraSpellID] = cfg } }
+-- easyButtonAuraByCDMDB.specs[specID] = { bindings = { [auraSpellID] = cfg } }
 --   cfg = { bindSpell = <目标技能 spellID，nil = 未绑定>,
 --           timePos = "default|up|down|left|right|none",
 --           stackPos = 同上, glow = bool, inverseGlow = bool }
@@ -558,9 +558,9 @@ local function GetCurrentSpecID()
 end
 
 function B.InitStorage()
-    EasyButtonAuraByCDMDB = EasyButtonAuraByCDMDB or {}
-    if not EasyButtonAuraByCDMDB.specs then
-        EasyButtonAuraByCDMDB.specs = { [0] = { bindings = {} } }
+    easyButtonAuraByCDMDB = easyButtonAuraByCDMDB or {}
+    if not easyButtonAuraByCDMDB.specs then
+        easyButtonAuraByCDMDB.specs = { [0] = { bindings = {} } }
     end
 end
 
@@ -568,7 +568,7 @@ end
 function B.SelectSpec(specID)
     B.InitStorage()
     specID = specID or GetCurrentSpecID()
-    local specs = EasyButtonAuraByCDMDB.specs
+    local specs = easyButtonAuraByCDMDB.specs
     if not specs[specID] then
         specs[specID] = { bindings = {} }
     end

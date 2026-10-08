@@ -66,8 +66,8 @@ local function UpdateCombatState()
     end
     for _, row in ipairs(rows) do
         row.edit:SetEnabled(not locked)
-        row.timeBtn:SetEnabled(not locked)
-        row.stackBtn:SetEnabled(not locked)
+        row.timeDd:SetEnabled(not locked)
+        row.stackDd:SetEnabled(not locked)
         row.glowCheck:SetEnabled(not locked)
         row.inverseCheck:SetEnabled(not locked)
         if locked and row.edit:HasFocus() then row.edit:ClearFocus() end
@@ -104,18 +104,33 @@ local function CommitEdit(row)
     row._committing = false
 end
 
--- 循环切换 时间 / 层数 的位置
-local function CyclePos(row, key)
-    local spellID = row.spellID
-    if not spellID then return end
+-- 时间 / 层数位置：下拉菜单（默认 / 上 / 下 / 左 / 右 / 无）
+local function CurPos(spellID, key)
     local cfg = B.GetBinding(spellID)
-    local cur = (cfg and cfg[key]) or "default"
-    local idx = 1
-    for i = 1, #B.POS_KEYS do
-        if B.POS_KEYS[i] == cur then idx = i break end
+    return (cfg and cfg[key]) or "default"
+end
+
+-- 下拉按钮的显示文字（不同版本方法名可能有差异，优先 SetText）
+local function SetDdText(dd, text)
+    if dd.SetText then
+        dd:SetText(text)
+    elseif dd.SetDefaultText then
+        dd:SetDefaultText(text)
     end
-    local nxt = B.POS_KEYS[(idx % #B.POS_KEYS) + 1]
-    B.SetBindingOption(spellID, key, nxt)
+end
+
+-- 给下拉按钮装配位置菜单；dd._spellID 由 UpdateRow 写入
+local function SetupPosMenu(dd, key)
+    dd:SetupMenu(function(_, rootDescription)
+        for _, posKey in ipairs(B.POS_KEYS) do
+            rootDescription:CreateRadio(B.PosLabel(posKey), function()
+                return CurPos(dd._spellID, key) == posKey
+            end, function()
+                if B._inCombat or not dd._spellID then return end
+                B.SetBindingOption(dd._spellID, key, posKey)
+            end)
+        end
+    end)
 end
 
 -- =========================================================
@@ -175,21 +190,18 @@ local function CreateRow(index)
     row.bindLabel:SetPoint("RIGHT", row.edit, "LEFT", -6, 0)
     row.bindLabel:SetText(L("COL_BIND"))
 
-    row.timeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.timeBtn:SetSize(W_TIME, 20)
-    row.timeBtn:SetPoint("BOTTOMLEFT", X_TIME, 6)
-    row.timeBtn:SetScript("OnClick", function()
-        if B._inCombat then return end
-        CyclePos(row, "timePos")
-    end)
+    -- 时间 / 层数：下拉菜单（底边与勾选框一致，中心线对齐）
+    row.timeDd = CreateFrame("DropdownButton", nil, row, "WowStyle1DropdownTemplate")
+    row.timeDd:SetSize(W_TIME, 24)
+    row.timeDd:SetPoint("BOTTOMLEFT", X_TIME, 4)
+    SetupPosMenu(row.timeDd, "timePos")
+    AddTip(row.timeDd, L("COL_TIME"))
 
-    row.stackBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.stackBtn:SetSize(W_STACK, 20)
-    row.stackBtn:SetPoint("BOTTOMLEFT", X_STACK, 6)
-    row.stackBtn:SetScript("OnClick", function()
-        if B._inCombat then return end
-        CyclePos(row, "stackPos")
-    end)
+    row.stackDd = CreateFrame("DropdownButton", nil, row, "WowStyle1DropdownTemplate")
+    row.stackDd:SetSize(W_STACK, 24)
+    row.stackDd:SetPoint("BOTTOMLEFT", X_STACK, 4)
+    SetupPosMenu(row.stackDd, "stackPos")
+    AddTip(row.stackDd, L("COL_STACK"))
 
     row.glowCheck = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
     row.glowCheck:SetSize(24, 24)
@@ -248,8 +260,10 @@ local function UpdateRow(row, spellID, buttonMap)
         row.status:SetText("")
     end
 
-    row.timeBtn:SetText(L("TIME_FMT"):format(B.PosLabel((cfg and cfg.timePos) or "default")))
-    row.stackBtn:SetText(L("STACK_FMT"):format(B.PosLabel((cfg and cfg.stackPos) or "default")))
+    row.timeDd._spellID = spellID
+    row.stackDd._spellID = spellID
+    SetDdText(row.timeDd, B.PosLabel((cfg and cfg.timePos) or "default"))
+    SetDdText(row.stackDd, B.PosLabel((cfg and cfg.stackPos) or "default"))
     row.glowCheck:SetChecked(cfg and cfg.glow == true or false)
     row.inverseCheck:SetChecked(cfg and cfg.inverseGlow == true or false)
 end
