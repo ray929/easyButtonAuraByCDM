@@ -288,10 +288,7 @@ local function BuildRowList()
     return list
 end
 
-function B.RefreshPanel()
-    if not panel or refreshing then return end
-    refreshing = true
-
+local function DoRefresh()
     B._inCombat = InCombatLockdown() and true or false
 
     panel.specText:SetText(L("SPEC_LABEL") .. ": " .. B.GetCurrentSpecName())
@@ -327,7 +324,45 @@ function B.RefreshPanel()
     panel:SetSize(PANEL_W, headerH + count * ROW_H + 16)
 
     UpdateCombatState()
+    return list
+end
+
+-- ⚠️ refreshing 守卫必须无条件复位：刷新中途一旦抛错，若不复位，之后所有刷新都会被守卫挡掉
+--    → 面板从此不再更新（表现为「配置像是丢了」）。
+function B.RefreshPanel()
+    if not panel or refreshing then return end
+    refreshing = true
+    local ok, list = pcall(DoRefresh)
     refreshing = false
+
+    -- 【临时诊断】面板行内容（排查「绑定列空白」，排查完删除）
+    if not ok then
+        print("|cffffcc00[EBAC-ROW]|r REFRESH_ERR=" .. tostring(list))
+        return
+    end
+    local dbg = {}
+    local okd = pcall(function()
+        local nBuf = 0
+        for _ in pairs(B.knownBuffs or {}) do nBuf = nBuf + 1 end
+        local bkeys = {}
+        for id in pairs(B.GetBindings()) do
+            local cfg = B.GetBinding(id)
+            bkeys[#bkeys + 1] = tostring(id) .. ":" .. (cfg and tostring(cfg.bindSpell) or "nil")
+        end
+        table.sort(bkeys)
+        dbg[#dbg + 1] = "db=" .. tostring(B.db ~= nil) .. " spec=" .. tostring(B.currentSpecID)
+            .. " nBuf=" .. nBuf .. " n=" .. #list
+        dbg[#dbg + 1] = "binds{" .. table.concat(bkeys, ",") .. "}"
+        for i = 1, #list do
+            local id = list[i]
+            local cfg = B.GetBinding(id)
+            local txt = rows[i] and rows[i].edit and rows[i].edit:GetText() or nil
+            local nam = rows[i] and rows[i].name and rows[i].name:GetText() or "?"
+            dbg[#dbg + 1] = tostring(id) .. "=>" .. (cfg and tostring(cfg.bindSpell) or "nocfg")
+                .. ",nam=[" .. tostring(nam) .. "],txt=[" .. tostring(txt) .. "]"
+        end
+    end)
+    if okd then print("|cffffcc00[EBAC-ROW]|r " .. table.concat(dbg, " ")) end
 end
 
 -- =========================================================
