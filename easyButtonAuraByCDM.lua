@@ -428,6 +428,9 @@ function B.Rescan()
     if total == 0 and next(old) then
         B.knownBuffs = old
     end
+    -- 重扫后重建条目：应用「CDM 移除即撤下覆盖层」的过滤，并刷新定位 / 发光。
+    -- 战斗中 RebuildEntries 自身会跳过，这里用 RefreshAll 兜底做一次纯定位刷新。
+    if B.RebuildEntries then B.RebuildEntries() end
     if B.RefreshAll then B.RefreshAll() end
     B.NotifyBuffsChanged()
 end

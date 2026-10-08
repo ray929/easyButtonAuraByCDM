@@ -277,17 +277,12 @@ end
 -- =========================================================
 -- 面板刷新
 -- =========================================================
--- 行集合 = CDM 已启用光环 ∪ 已有绑定（后者保证解绑前的旧光环仍可管理），按名称排序
+-- 行集合 = 当前仍在 CDM 中【已启用】的光环，按名称排序。
+-- 不并入「已有绑定」：光环一旦从 CDM 移除，本行即消失（绑定仍留在存档里，
+-- 日后在 CDM 重新启用该光环时自动恢复并重新显示，不会丢配置）。
 local function BuildRowList()
-    local seen, list = {}, {}
-    local function add(id)
-        if id and not seen[id] then
-            seen[id] = true
-            list[#list + 1] = id
-        end
-    end
-    for id in pairs(B.knownBuffs or {}) do add(id) end
-    for id in pairs(B.GetBindings()) do add(id) end
+    local list = {}
+    for id in pairs(B.knownBuffs or {}) do list[#list + 1] = id end
     table.sort(list, function(a, b)
         return B.GetSpellDisplayName(a) < B.GetSpellDisplayName(b)
     end)

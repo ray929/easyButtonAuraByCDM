@@ -423,10 +423,14 @@ function B.RebuildEntries()
     if not B.db or InCombatLockdown() then return end
     local bindings = B.GetBindings()
     local map = B.BuildSpellButtonMap()
+    local known = B.knownBuffs or {}
 
     for spellID, cfg in pairs(bindings) do
         local target = cfg.bindSpell
-        local buttonName = target and map[target]
+        -- 仅当该光环当前仍在 CDM 中【已启用】时才显示；从 CDM 移除即撤下覆盖层
+        -- （绑定仍保留在存档里，日后重新启用会自动恢复显示）。
+        local buttonName
+        if known[spellID] and target then buttonName = map[target] end
         local e = entries[spellID]
         if buttonName then
             -- ⚠️ 先填好 button 再建容器：BuildContainer 要量按钮尺寸来算比例锚点
