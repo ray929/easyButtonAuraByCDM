@@ -1,7 +1,5 @@
 ## Interface: 120100, 16001
 ## Title: Easy Button Aura by CDM
-## Title-zhCN: CDM 动作条光环
-## Title-zhTW: CDM 快捷列光環
 ## Notes: Manually bind auras from Blizzard's Cooldown Manager to action bar buttons: shows their remaining time and stacks on the button, with optional glow / missing-aura alert.
 ## Notes-zhCN: 把暴雪冷却管理器(CDM)中的增益光环手动绑定到动作条按钮：在按钮上显示该光环的剩余时间与层数，可选发光/反发光提醒。
 ## Notes-zhTW: 把暴雪冷卻管理器(CDM)中的增益光環手動綁定到快捷列按鈕：在按鈕上顯示該光環的剩餘時間與堆疊數量，可選發光／反發光提醒。
