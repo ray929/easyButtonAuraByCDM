@@ -177,7 +177,13 @@ local function ResolveUnitAndFilter(spellID)
     return unit, (assistable and "HELPFUL" or "HARMFUL")
 end
 
+-- 客户端能力探测：AuraContainer / CustomAuraContainerTemplate 为 12.1 引入的体系。
+-- 目标客户端若缺失（如未在 Camelot / 无限上验证的情形），把标记置 false 后静默跳过
+-- （全静默约定，不刷错误）。
+local containerSupported = true
+
 local function BuildContainer(e)
+    if not containerSupported then return false end
     local spellID = e.spellID
     local includeSpellIDs = { [spellID] = true }
     -- 12.1+ 天赋改名场景：把扫描到的全部候选 ID 一并纳入精确过滤
@@ -195,7 +201,12 @@ local function BuildContainer(e)
 
     local timePos, stackPos = B.GetDisplayOptions(spellID)
 
-    local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
+    -- pcall 兜底：客户端若不支持 AuraContainer 体系，CreateFrame 会抛错
+    local okCreate, container = pcall(CreateFrame, "AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
+    if not okCreate or not container then
+        containerSupported = false
+        return false
+    end
     container:SetFrameStrata("HIGH")
     container:SetFrameLevel(900)
     container:SetSize(cw, ch)
