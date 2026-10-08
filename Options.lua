@@ -127,9 +127,24 @@ local function CreateRow(index)
     row:SetPoint("TOPLEFT", 0, -(index - 1) * ROW_H)
 
     -- 第一行：图标 + 光环名 + 状态提示
-    row.icon = row:CreateTexture(nil, "ARTWORK")
+    -- 图标做成可悬停按钮：鼠标移上显示与 CDM 高级设置里一致的技能 / 光环提示
+    row.icon = CreateFrame("Button", nil, row)
     row.icon:SetSize(20, 20)
     row.icon:SetPoint("TOPLEFT", 6, -4)
+    row.icon.tex = row.icon:CreateTexture(nil, "ARTWORK")
+    row.icon.tex:SetAllPoints()
+    row.icon:SetScript("OnEnter", function(self)
+        local id = self.spellID
+        if not id then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if GameTooltip.SetSpellByID then
+            GameTooltip:SetSpellByID(id)
+        else
+            GameTooltip:SetText(B.GetSpellDisplayName(id))
+        end
+        GameTooltip:Show()
+    end)
+    row.icon:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
@@ -216,7 +231,8 @@ end
 local function UpdateRow(row, spellID, buttonMap)
     local buff = B.knownBuffs and B.knownBuffs[spellID]
     row.name:SetText(buff and buff.name or B.GetSpellDisplayName(spellID))
-    row.icon:SetTexture((buff and buff.icon) or "Interface\\Icons\\INV_Misc_QuestionMark")
+    row.icon.spellID = spellID
+    row.icon.tex:SetTexture((buff and buff.icon) or "Interface\\Icons\\INV_Misc_QuestionMark")
 
     local cfg = B.GetBinding(spellID)
     local bound = cfg and cfg.bindSpell
@@ -282,6 +298,7 @@ function B.RefreshPanel()
     end
     for i = #list + 1, #rows do
         rows[i].spellID = nil
+        rows[i].icon.spellID = nil
         rows[i]:Hide()
     end
 
