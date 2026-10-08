@@ -13,7 +13,8 @@
 --     不再 reparent CDM 已渲染对象，也不再把 CDM 图标移出屏幕。
 --   · 发光用内嵌的 LibCustomGlow-1.0（Proc Glow）；本地化仍为自维护纯 Lua 表。
 --     库文件内嵌在本插件 Libs/ 下（LibStub + LibCustomGlow-1.0），.toc 先于本文件加载。
---   · 无 slash 命令；设置界面集成进暴雪自带插件设置（战斗中禁止修改）。
+--   · 设置界面 = 暴雪插件设置里的占位页（提示 + 按钮）+ 自有独立配置窗口（/babc 打开）；
+--     战斗中配置窗口自动隐藏、战斗结束恢复。
 --   · 12.x secret 值红线：一律 issecretvalue 判定，不比较 secret 数值，外部数据 pcall 兜底。
 
 EasyButtonAuraByCDM = EasyButtonAuraByCDM or {}
@@ -48,7 +49,8 @@ local LOCALES = {
         INVERSE_TIP       = "Glow the button red while the aura is missing.",
         ERR_INVALID       = "Spell not found",
         STATUS_NOT_ON_BAR = "not on action bars",
-        COMBAT_LOCKED     = "Settings cannot be changed during combat.",
+        OPEN_OPTIONS      = "Open Options",
+        STUB_HINT         = "Configure this addon in its own window. Click the button below, or type /babc.",
     },
     zhCN = {
         SPEC_LABEL        = "当前专精",
@@ -70,7 +72,8 @@ local LOCALES = {
         INVERSE_TIP       = "光环缺失时按钮亮红光。",
         ERR_INVALID       = "未找到该法术",
         STATUS_NOT_ON_BAR = "不在动作条上",
-        COMBAT_LOCKED     = "战斗中无法修改设置。",
+        OPEN_OPTIONS      = "打开配置",
+        STUB_HINT         = "本插件的配置在独立窗口中完成。点击下方按钮，或输入 /babc 打开。",
     },
     zhTW = {
         SPEC_LABEL        = "目前專精",
@@ -92,7 +95,8 @@ local LOCALES = {
         INVERSE_TIP       = "光環缺失時按鈕亮紅光。",
         ERR_INVALID       = "找不到該法術",
         STATUS_NOT_ON_BAR = "不在快捷列上",
-        COMBAT_LOCKED     = "戰鬥中無法修改設定。",
+        OPEN_OPTIONS      = "開啟設定",
+        STUB_HINT         = "本插件的設定在獨立視窗中完成。點擊下方按鈕，或輸入 /babc 開啟。",
     },
 }
 

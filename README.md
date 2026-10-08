@@ -7,8 +7,8 @@
 - Pick a buff that is already tracked in Blizzard's Cooldown Manager, then bind it to one of your action bar skills.
 - The aura's remaining time and stack count are shown on that button.
 - Optional glow while the aura is active, and an optional red alert when it is missing.
-- A single settings page, built into Blizzard's own add-on settings; no slash commands.
-- Settings can only be changed out of combat; the settings page is locked during combat.
+- Configuration lives in its own window: open it with `/babc`, or from the add-on's page in Blizzard's settings.
+- Settings can only be changed out of combat; the configuration window is hidden during combat and restored afterwards.
 - Works during combat. The original Cooldown Manager display is left untouched.
 
 ## 简体中文
@@ -18,8 +18,8 @@
 - 从暴雪冷却管理器中已启用的增益里挑选一个，绑定到动作条上的某个技能按钮。
 - 在该按钮上显示该光环的剩余时间与层数。
 - 可选：光环存在时发光提醒；光环缺失时红色提醒（反发光）。
-- 只有一个设置界面，集成在暴雪自带的插件设置里；不使用斜杠命令。
-- 设置需在战斗外修改；战斗中设置页会被锁定。
+- 配置在独立窗口中完成：输入 `/babc` 打开，或从暴雪插件设置里本插件的页面打开。
+- 设置需在战斗外修改；战斗中配置窗口会自动隐藏，战斗结束恢复。
 - 战斗中同样生效。冷却管理器原本的显示保持原样，不会被隐藏或移动。
 
 ## 繁體中文
@@ -29,8 +29,8 @@
 - 從暴雪冷卻管理器中已啟用的增益裡挑選一個，綁定到快捷列上的某個技能按鈕。
 - 在該按鈕上顯示該光環的剩餘時間與堆疊數量。
 - 可選：光環存在時發光提醒；光環缺失時紅色提醒（反發光）。
-- 只有一個設定介面，整合在暴雪內建的插件設定中；不使用斜線指令。
-- 設定需在戰鬥外修改；戰鬥中設定頁面會被鎖定。
+- 設定在獨立視窗中完成：輸入 `/babc` 開啟，或從暴雪插件設定裡本插件的頁面開啟。
+- 設定需在戰鬥外修改；戰鬥中設定視窗會自動隱藏，戰鬥結束後恢復。
 - 戰鬥中同樣有效。冷卻管理器原本的顯示維持原樣，不會被隱藏或移動。
 
 ## Credits / 致谢 / 致謝

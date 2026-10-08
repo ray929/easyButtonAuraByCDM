@@ -1,11 +1,13 @@
 -- Options.lua
 -- Easy Button Aura by CDM — 设置界面
 --
--- 单一设置页，集成进暴雪自带的插件设置（ESC → 选项 → 插件 → 本插件）。
---   · 无 slash 命令；战斗中禁止修改（控件禁用 + 顶部红色提示）。
---   · 每行 = CDM 里一个「已启用」的光环：可把它绑定到某个动作条技能，
---     并分别设置剩余时间 / 层数的位置，以及发光 / 反发光。
---   · 修改即时落盘（canvas layout 的 OnCommit 为空实现）。
+-- 界面分两块：
+--   1. 暴雪插件设置里的【占位页】：只有一句提示 + 一个按钮，点按钮打开自有配置窗口。
+--      （不再把整页控件嵌进暴雪设置，省去「ESC → 选项 → 插件 → 本插件」逐层点开。）
+--   2. 【自有配置窗口】：承载全部绑定 / 位置 / 发光控件；用 /babc 或占位页按钮打开。
+--
+-- 战斗行为（用户指定）：战斗中配置窗口直接隐藏，战斗结束若此前是打开状态则自动恢复。
+-- 战斗中不响应 /babc 与占位页按钮（窗口无法被打开）。
 --
 -- 布局约定：所有控件的坐标都是【相对 row 的绝对坐标】，不互相链式锚定，
 -- 保证行与行、控件与控件严格对齐且不重叠（链式锚定曾被反馈「错位」）。
@@ -13,7 +15,7 @@
 local B = EasyButtonAuraByCDM
 local L = B.L
 
--- 面板宽度：设置 canvas 可视宽度有限，过宽会把右侧控件裁掉
+-- 配置窗口宽度：过宽会超出小屏，行内控件按固定列排布
 local PANEL_W = 520
 local ROW_W   = PANEL_W - 16
 local ROW_H   = 56
@@ -24,20 +26,12 @@ local X_TIME,    W_TIME    = 160, 86
 local X_STACK,   W_STACK   = 254, 94
 local X_GLOW,    X_INVERSE = 358, 426
 
-local panel
+-- 暴雪设置分类名 / 配置窗口标题：不本地化，固定用插件名（用户指定）
+local ADDON_TITLE = "Easy Button Aura by CDM"
+
+local configFrame
 local rows = {}          -- 行池（复用）
 local refreshing = false -- RefreshPanel 递归守卫
-
--- 插件名（用于设置分类标题）
-local function GetAddonTitle()
-    local fn = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-    if fn then
-        local ok, title = pcall(fn, B.ADDON_NAME, "Title")
-        if ok and title and title ~= "" then return title end
-    end
-    return "Easy Button Aura by CDM"
-end
-local ADDON_TITLE = GetAddonTitle()
 
 -- =========================================================
 -- 小工具
@@ -56,22 +50,6 @@ local function AddTip(widget, text)
         if prevLeave then prevLeave(self, ...) end
         GameTooltip:Hide()
     end)
-end
-
--- 战斗中禁用全部可编辑控件 + 显示红色提示
-local function UpdateCombatState()
-    local locked = B._inCombat and true or false
-    if panel and panel.combatWarning then
-        panel.combatWarning:SetShown(locked)
-    end
-    for _, row in ipairs(rows) do
-        row.edit:SetEnabled(not locked)
-        row.timeDd:SetEnabled(not locked)
-        row.stackDd:SetEnabled(not locked)
-        row.glowCheck:SetEnabled(not locked)
-        row.inverseCheck:SetEnabled(not locked)
-        if locked and row.edit:HasFocus() then row.edit:ClearFocus() end
-    end
 end
 
 -- 提交「绑定」输入框：名 / ID 皆可；空 = 解绑；无法解析 = 还原并提示
@@ -137,7 +115,7 @@ end
 -- 行控件
 -- =========================================================
 local function CreateRow(index)
-    local row = CreateFrame("Frame", nil, panel.rows)
+    local row = CreateFrame("Frame", nil, configFrame.rows)
     row:SetSize(ROW_W, ROW_H)
     row:SetPoint("TOPLEFT", 0, -(index - 1) * ROW_H)
 
@@ -251,7 +229,7 @@ local function UpdateRow(row, spellID, buttonMap)
 
     -- 绑定框显示当前绑定的技能名。
     -- ⚠️ 必须「先清空再写入」：EditBox:SetText 在文本未变时被客户端短路为 no-op，
-    --    而初次 SetText 发生在设置面板尚隐藏时（字体度量未就绪），内部水平滚动偏移会算错，
+    --    而初次 SetText 发生在窗口尚隐藏时（字体度量未就绪），内部水平滚动偏移会算错，
     --    文字被滚到框外看不见（鼠标拖动选择才显现）。先清空强制其按当前尺寸重算偏移。
     if not row.edit:HasFocus() then
         local text = bound and B.GetSpellDisplayName(bound) or ""
@@ -290,9 +268,10 @@ local function BuildRowList()
 end
 
 local function DoRefresh()
+    if not configFrame then return end
     B._inCombat = InCombatLockdown() and true or false
 
-    panel.specText:SetText(L("SPEC_LABEL") .. ": " .. B.GetCurrentSpecName())
+    configFrame.specText:SetText(L("SPEC_LABEL") .. ": " .. B.GetCurrentSpecName())
 
     local list = BuildRowList()
     local buttonMap = B.BuildSpellButtonMap()
@@ -315,96 +294,177 @@ local function DoRefresh()
     end
 
     local count = math.max(#list, 1)
-    panel.noAuras:SetShown(#list == 0)
-    panel.rows:SetSize(ROW_W, count * ROW_H)
+    configFrame.noAuras:SetShown(#list == 0)
+    configFrame.rows:SetSize(ROW_W, count * ROW_H)
 
-    -- 面板高度 = 头部（面板顶 → 行区域顶） + 行区域 + 底部留白。
-    -- 头部高度取运行时实际几何（描述行数会随语言变化，不能用常量）；几何不可用时用兜底值。
-    local pTop, rTop = panel:GetTop(), panel.rows:GetTop()
-    local headerH = (pTop and rTop and pTop > rTop) and (pTop - rTop) or 120
-    panel:SetSize(PANEL_W, headerH + count * ROW_H + 16)
+    -- 窗口高度 = 顶部（窗口顶 → 行区域顶） + 行区域 + 底部留白。
+    -- 顶部高度取运行时实际几何（提示文字行数会随语言变化，不能用常量）；几何不可用时用兜底值。
+    local pTop, rTop = configFrame:GetTop(), configFrame.rows:GetTop()
+    local headerH = (pTop and rTop and pTop > rTop) and (pTop - rTop) or 130
+    configFrame:SetSize(PANEL_W, headerH + count * ROW_H + 20)
 
-    UpdateCombatState()
     return list
 end
 
 -- ⚠️ refreshing 守卫必须无条件复位：刷新中途一旦抛错，若不复位，之后所有刷新都会被守卫挡掉
 --    → 面板从此不再更新（表现为「配置像是丢了」）。
 function B.RefreshPanel()
-    if not panel or refreshing then return end
+    if not configFrame or refreshing then return end
     refreshing = true
     pcall(DoRefresh)
     refreshing = false
 end
 
 -- =========================================================
--- 面板构建 + 注册进暴雪设置
+-- 自有配置窗口
 -- =========================================================
-local function BuildPanel()
-    panel = CreateFrame("Frame")
-    panel:SetSize(PANEL_W, 200)
+local function BuildConfigFrame()
+    configFrame = CreateFrame("Frame", "EasyButtonAuraByCDMConfigFrame", UIParent, "BasicFrameTemplateWithInset")
+    configFrame:SetSize(PANEL_W, 320)
+    configFrame:SetPoint("TOP", UIParent, "TOP", 0, -120)
+    configFrame:SetMovable(true)
+    configFrame:EnableMouse(true)
+    configFrame:SetClampedToScreen(true)
+    configFrame:SetFrameStrata("DIALOG")
+    configFrame:RegisterForDrag("LeftButton")
+    configFrame:SetScript("OnDragStart", configFrame.StartMoving)
+    configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
+    configFrame:Hide()
 
-    -- canvas layout 要求的三函数：修改即时生效，故均为空 / 仅刷新
-    panel.OnCommit  = function() end
-    panel.OnDefault = function() end
-    panel.OnRefresh = function() if B.RefreshPanel then B.RefreshPanel() end end
+    -- 标题（不本地化，固定插件名）
+    local titleText = (configFrame.TitleContainer and configFrame.TitleContainer.TitleText) or configFrame.TitleText
+    if titleText then titleText:SetText(ADDON_TITLE) end
 
-    panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    panel.title:SetPoint("TOPLEFT", 16, -12)
-    panel.title:SetText(ADDON_TITLE)
+    -- 顶部提示：当前专精 + 一句话说明（用户要求配置页上也有一句提示）
+    configFrame.specText = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    configFrame.specText:SetPoint("TOPLEFT", 16, -36)
 
-    panel.specText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    panel.specText:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
+    configFrame.desc = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    configFrame.desc:SetPoint("TOPLEFT", configFrame.specText, "BOTTOMLEFT", 0, -8)
+    configFrame.desc:SetWidth(PANEL_W - 40)
+    configFrame.desc:SetJustifyH("LEFT")
+    configFrame.desc:SetText(L("PAGE_DESC"))
 
-    panel.combatWarning = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.combatWarning:SetPoint("TOPLEFT", panel.specText, "BOTTOMLEFT", 0, -6)
-    panel.combatWarning:SetTextColor(1, 0.3, 0.3)
-    panel.combatWarning:SetText(L("COMBAT_LOCKED"))
-    panel.combatWarning:Hide()
+    configFrame.noAuras = configFrame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    configFrame.noAuras:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 0, -12)
+    configFrame.noAuras:SetWidth(PANEL_W - 40)
+    configFrame.noAuras:SetJustifyH("LEFT")
+    configFrame.noAuras:SetText(L("NO_AURAS"))
+    configFrame.noAuras:Hide()
 
-    panel.desc = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    panel.desc:SetPoint("TOPLEFT", panel.combatWarning, "BOTTOMLEFT", 0, -8)
-    panel.desc:SetWidth(PANEL_W - 32)
-    panel.desc:SetJustifyH("LEFT")
-    panel.desc:SetText(L("PAGE_DESC"))
+    configFrame.rows = CreateFrame("Frame", nil, configFrame)
+    configFrame.rows:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 8, -14)
+    configFrame.rows:SetSize(ROW_W, ROW_H)
 
-    panel.noAuras = panel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    panel.noAuras:SetPoint("TOPLEFT", panel.desc, "BOTTOMLEFT", 0, -14)
-    panel.noAuras:SetWidth(PANEL_W - 32)
-    panel.noAuras:SetJustifyH("LEFT")
-    panel.noAuras:SetText(L("NO_AURAS"))
-    panel.noAuras:Hide()
-
-    panel.rows = CreateFrame("Frame", nil, panel)
-    panel.rows:SetPoint("TOPLEFT", panel.desc, "BOTTOMLEFT", 8, -14)
-    panel.rows:SetSize(ROW_W, ROW_H)
-
-    -- 设置页显隐：驱动主文件的低频签名巡检（面板打开时保持 CDM 列表最新）
-    panel:SetScript("OnShow", function()
+    -- 窗口显隐：驱动主文件的低频签名巡检（窗口打开时保持 CDM 列表最新）
+    configFrame:SetScript("OnShow", function()
         B.panelShown = true
         if B.Rescan then
             B.Rescan()
-        elseif B.RefreshPanel then
+        else
             B.RefreshPanel()
         end
     end)
-    panel:SetScript("OnHide", function()
+    configFrame:SetScript("OnHide", function()
         B.panelShown = false
     end)
 end
 
+-- 打开配置窗口（战斗中不允许打开）
+function B.ShowConfigFrame()
+    if InCombatLockdown() then return end
+    if not configFrame then BuildConfigFrame() end
+    configFrame:Show()
+end
+
+-- /babc 与占位页按钮：切换配置窗口显隐（战斗中不响应）
+function B.ToggleConfigFrame()
+    if InCombatLockdown() then return end
+    if not configFrame then BuildConfigFrame() end
+    if configFrame:IsShown() then
+        configFrame:Hide()
+    else
+        configFrame:Show()
+    end
+end
+
+-- 战斗状态切换（主文件 PLAYER_REGEN_DISABLED / ENABLED 调用）：
+-- 战斗中直接隐藏配置窗口并记住；战斗结束若此前是打开状态则恢复。
+function B.OnCombatChanged(inCombat)
+    B._inCombat = inCombat and true or false
+    if not configFrame then return end
+    if inCombat then
+        if configFrame:IsShown() then
+            B._restoreConfig = true
+            configFrame:Hide()
+        end
+    elseif B._restoreConfig then
+        B._restoreConfig = nil
+        B.ShowConfigFrame()
+    end
+end
+
+-- =========================================================
+-- 暴雪插件设置里的占位页（提示 + 按钮）
+-- =========================================================
+local function BuildBlizzardStub()
+    local stub = CreateFrame("Frame")
+    stub:SetSize(PANEL_W, 200)
+
+    -- canvas layout 要求的三函数：本页无实际设置，故均为空实现
+    stub.OnCommit  = function() end
+    stub.OnDefault = function() end
+    stub.OnRefresh = function() end
+
+    local hint = stub:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    hint:SetPoint("TOP", stub, "TOP", 0, -40)
+    hint:SetWidth(PANEL_W - 40)
+    hint:SetJustifyH("CENTER")
+    hint:SetText(L("STUB_HINT"))
+
+    local template = "SharedButtonLargeTemplate"
+    local hasTemplate = false
+    if C_XMLUtil and C_XMLUtil.GetTemplateInfo then
+        local ok, info = pcall(C_XMLUtil.GetTemplateInfo, template)
+        hasTemplate = ok and info ~= nil
+    end
+    if not hasTemplate then template = "UIPanelDynamicResizeButtonTemplate" end
+    local button = CreateFrame("Button", nil, stub, template)
+    button:SetText(L("OPEN_OPTIONS"))
+    button.padding = 40
+    if DynamicResizeButton_Resize then pcall(DynamicResizeButton_Resize, button) end
+    button:SetPoint("TOP", hint, "BOTTOM", 0, -30)
+    button:SetScript("OnClick", function() B.ToggleConfigFrame() end)
+
+    return stub
+end
+
 local function RegisterSettings()
-    if panel then return end
+    if B._stubRegistered then return end
     if not Settings or not Settings.RegisterCanvasLayoutCategory then return end
-    BuildPanel()
-    local category = Settings.RegisterCanvasLayoutCategory(panel, ADDON_TITLE)
+    B._stubRegistered = true
+    local stub = BuildBlizzardStub()
+    -- 分类名不本地化，固定用插件名（用户指定）
+    local category = Settings.RegisterCanvasLayoutCategory(stub, ADDON_TITLE)
     Settings.RegisterAddOnCategory(category)
 end
 
+-- =========================================================
+-- slash 命令：/babc 打开自有配置窗口
+-- =========================================================
+SLASH_EASYBUTTONAURABYCDM1 = "/babc"
+SlashCmdList["EASYBUTTONAURABYCDM"] = function()
+    B.ToggleConfigFrame()
+end
+
+-- =========================================================
+-- 启动
+-- =========================================================
 local boot = CreateFrame("Frame")
 boot:RegisterEvent("PLAYER_LOGIN")
 boot:SetScript("OnEvent", function(self, event)
     self:UnregisterEvent(event)
     RegisterSettings()
-    if B.RefreshPanel then B.RefreshPanel() end
+    BuildConfigFrame()
+    B.RefreshPanel()
 end)

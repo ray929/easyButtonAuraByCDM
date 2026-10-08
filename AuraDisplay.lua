@@ -46,39 +46,60 @@ end
 
 -- =========================================================
 -- 发光：LibCustomGlow-1.0 的 Proc Glow（内嵌库，见 Libs/）
+--   ⚠️ LCG 的发光帧是【按钮级】：按 传入按钮 + key 存放（r["_ProcGlow"..key]）。
+--      而绑定是【光环级】——同一个动作按钮可能被多个光环绑定（例如两条光环都绑到
+--      同一个技能）。若每个光环各自 Start / Stop，就会互相 Stop 掉共享的发光帧，
+--      或每次刷新都重启一次动画 → 视觉上「浓厚 / 闪烁」，甚至残留。
+--      故：先按【按钮】汇总所有光环的发光意图（优先级 on > inverse > none），
+--      每个按钮只应用一次（模式变化才重启），从根上消除叠层。
 -- =========================================================
 local LCG = B.LCG
-local GLOW_KEY = "EBAC"   -- LCG key：Start / Stop 必须一致，否则发光帧残留
+local GLOW_KEY = "EBAC"       -- LCG key：Start / Stop 必须一致，否则发光帧残留
+local glowApplied = {}        -- button -> "on" | "inverse"（该按钮当前已应用的发光状态）
 
--- 停掉当前挂在 e._glowBtn 上的发光。必须先停旧键再换按钮，
--- 否则改绑 / 换页后旧按钮上的发光帧会永久残留。
-local function StopGlow(e)
-    if not LCG then return end
-    local btn = e._glowBtn
+local function StopButtonGlow(btn)
     if not btn then return end
-    pcall(LCG.ProcGlow_Stop, btn, GLOW_KEY)
-    e._glowBtn = nil
+    if not glowApplied[btn] then return end
+    if LCG then pcall(LCG.ProcGlow_Stop, btn, GLOW_KEY) end
+    glowApplied[btn] = nil
 end
 
--- mode: "none" | "on"（光环存在，青色） | "inverse"（光环缺失，亮红）
--- 按钮变化（改绑 / 翻页换技能）时即使 mode 未变也要重挂，故一并比较 _glowBtn。
-local function SetGlowMode(e, mode)
-    local btn = e.button
-    if e._glowMode == mode and (mode == "none" or e._glowBtn == btn) then return end
-    e._glowMode = mode
-    if not LCG then return end
-    if mode == "none" or not btn then
-        StopGlow(e)
-        return
-    end
-    if e._glowBtn and e._glowBtn ~= btn then StopGlow(e) end
+local function StartButtonGlow(btn, mode)
+    if not btn or not LCG then return end
+    if glowApplied[btn] == mode then return end
+    -- 模式变化（青 ↔ 红）先停旧帧再起，避免颜色 / 动画残留
+    if glowApplied[btn] then pcall(LCG.ProcGlow_Stop, btn, GLOW_KEY) end
     local c = (mode == "inverse") and S.INVERSE_GLOW_COLOR or S.GLOW_COLOR
     pcall(LCG.ProcGlow_Start, btn, {
         key = GLOW_KEY,
         startAnim = true,
         color = { c[1], c[2], c[3], c[4] or 1 },
     })
-    e._glowBtn = btn
+    glowApplied[btn] = mode
+end
+
+-- 按按钮汇总并应用发光。意图实时读自「该按钮上所有光环的 present + 发光配置」，
+-- 幂等：同按钮同模式重复调用不会重启动画（LCG 的「浓厚感」主要来自反复 Start）。
+-- 由 RefreshAll / OnCdmItemRefreshed / HideStaleEntries 末尾统一调用。
+function B.ApplyButtonGlows()
+    if not LCG then return end
+    local want = {}
+    for spellID, e in pairs(entries) do
+        local btn = e.button
+        if btn and not e._hidden then
+            local _, _, glowOn, inverseOn = B.GetDisplayOptions(spellID)
+            local present = e._present
+            if present == true and glowOn then
+                want[btn] = "on"
+            elseif present == false and inverseOn and want[btn] ~= "on" then
+                want[btn] = "inverse"
+            end
+        end
+    end
+    for btn, mode in pairs(want) do StartButtonGlow(btn, mode) end
+    for btn in pairs(glowApplied) do
+        if not want[btn] then StopButtonGlow(btn) end
+    end
 end
 
 -- =========================================================
@@ -327,16 +348,6 @@ local function AuraPresent(e, item)
     return v
 end
 
-local function ApplyGlow(e, present, glowOn, inverseOn)
-    if present == true then
-        SetGlowMode(e, glowOn and "on" or "none")
-    elseif present == false then
-        SetGlowMode(e, inverseOn and "inverse" or "none")
-    else
-        SetGlowMode(e, "none")
-    end
-end
-
 -- =========================================================
 -- 单个条目的显示 / 停靠
 -- =========================================================
@@ -355,7 +366,7 @@ end
 
 local function HideEntry(e)
     DockContainer(e)
-    SetGlowMode(e, "none")
+    e._hidden = true   -- 不参与发光汇总（按钮不可用 / 未定位）
     e.visible = false
 end
 
@@ -378,9 +389,7 @@ local function UpdateEntry(e, btn)
         end
     end
 
-    local timePos, stackPos, glowOn, inverseOn = B.GetDisplayOptions(e.spellID)
-
-    -- 光环不存在：连容器一起停靠（数字随之移出屏幕），并撤下发光以外的显示。
+    -- 光环不存在：连容器一起停靠（数字随之移出屏幕），发光由汇总层统一处理。
     local present = AuraPresent(e)
     local showNum = (present ~= false)
 
@@ -399,8 +408,9 @@ local function UpdateEntry(e, btn)
     end
 
     ApplyCountdownFont(e)
+    e._hidden = nil
     e.visible = showNum
-    ApplyGlow(e, present, glowOn, inverseOn)
+    -- 发光不在此处应用：由 RefreshAll 末尾的 B.ApplyButtonGlows 按按钮统一汇总
 end
 
 -- =========================================================
@@ -410,11 +420,9 @@ end
 function B.OnCdmItemRefreshed(spellID, item)
     local e = entries[spellID]
     if not e or not e.button then return end
-    e.frame = item
-    local _, _, glowOn, inverseOn = B.GetDisplayOptions(spellID)
-    if glowOn or inverseOn then
-        ApplyGlow(e, AuraPresent(e, item), glowOn, inverseOn)
-    end
+    -- 刷新该光环「是否存在」的明文状态，再按按钮统一重算发光
+    AuraPresent(e, item)
+    B.ApplyButtonGlows()
 end
 
 -- 根据当前绑定重建条目（绑定变动 / 专精切换 / 动作条变动时调用）。
@@ -481,6 +489,7 @@ function B.HideStaleEntries()
             end
         end
     end
+    B.ApplyButtonGlows()
 end
 
 -- 全量刷新：重定位 + 同步发光（登录 / 切换专精 / 动作条变动 / 光环增删 / 定时兜底）
@@ -494,4 +503,5 @@ function B.RefreshAll()
             end
         end
     end
+    B.ApplyButtonGlows()
 end
