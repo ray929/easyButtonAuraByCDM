@@ -23,6 +23,9 @@ B.ADDON_NAME = ...
 -- 内嵌库：LibStub + LibCustomGlow-1.0（.toc 已先于本文件加载）
 B.LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
+-- 【临时诊断】存档文件在本文件加载时是否已有内容（排查「/reload 后配置丢失」，排查完删除）
+B._dbLoaded = (type(easyButtonAuraByCDMDB) == "table")
+
 -- =========================================================
 -- 本地化（自维护纯 Lua 表；本插件未引入本地化库）
 -- 仅 enUS（默认 / 回退）+ zhCN + zhTW 三语
@@ -568,6 +571,33 @@ function B.InitStorage()
     end
 end
 
+-- 【临时诊断】打印存档状态（排查「/reload 后配置丢失」，排查完删除）
+function B.DumpDB(tag)
+    local db = easyButtonAuraByCDMDB
+    local parts = {
+        "loaded=" .. tostring(B._dbLoaded),
+        "db=" .. (type(db) == "table" and "table" or tostring(db)),
+        "spec=" .. tostring(B.currentSpecID),
+        "getSpec=" .. tostring(GetCurrentSpecID()),
+    }
+    local specs = (type(db) == "table") and db.specs
+    if type(specs) == "table" then
+        local keys = {}
+        for k, v in pairs(specs) do
+            local n = 0
+            if type(v) == "table" and type(v.bindings) == "table" then
+                for _ in pairs(v.bindings) do n = n + 1 end
+            end
+            keys[#keys + 1] = tostring(k) .. ":" .. n
+        end
+        table.sort(keys)
+        parts[#parts + 1] = "specs{" .. table.concat(keys, ",") .. "}"
+    else
+        parts[#parts + 1] = "specs=none"
+    end
+    print("|cffffcc00[EBAC-DB]|r " .. tostring(tag or "") .. " " .. table.concat(parts, " "))
+end
+
 -- 切换到「当前专精」配置槽：B.db 指向 specs[specID] 子表
 function B.SelectSpec(specID)
     B.InitStorage()
@@ -623,6 +653,7 @@ end
 function B.SetBoundSpell(spellID, targetSpellID)
     if not spellID or not B.db then return end
     WriteBinding(spellID, function(cfg) cfg.bindSpell = targetSpellID end)
+    if B.DumpDB then B.DumpDB("bind:" .. tostring(spellID) .. "->" .. tostring(targetSpellID)) end
     B.NotifyBindingsChanged()
 end
 
@@ -630,6 +661,7 @@ end
 function B.SetBindingOption(spellID, key, val)
     if not spellID or not key or not B.db then return end
     WriteBinding(spellID, function(cfg) cfg[key] = val end)
+    if B.DumpDB then B.DumpDB("opt:" .. tostring(spellID) .. "." .. tostring(key) .. "=" .. tostring(val)) end
     B.NotifyBindingsChanged()
 end
 
@@ -693,12 +725,15 @@ for ev in pairs(actionbarEvents) do eventFrame:RegisterEvent(ev) end
 
 eventFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
+        if B.DumpDB then B.DumpDB("login-before-select") end
         B.SelectSpec()
+        if B.DumpDB then B.DumpDB("login-after-select") end
         EnsureHooks()
         C_Timer.After(0.5, function() EnsureHooks(); B.Rescan() end)
         C_Timer.After(2.0, function() EnsureHooks(); B.Rescan() end)
     elseif event == "PLAYER_ENTERING_WORLD" then
         B.SelectSpec()
+        if B.DumpDB then B.DumpDB("enterworld") end
         C_Timer.After(0.5, function() EnsureHooks(); B.Rescan() end)
     elseif event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
         B.SelectSpec()

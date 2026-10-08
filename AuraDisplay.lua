@@ -3,20 +3,35 @@
 --
 -- 对每个「已绑定」的 CDM 增益，在目标动作条按钮上显示该光环的剩余时间与层数。
 --
--- 实现要点：
---   · 倒计时 / 层数由暴雪 12.1 的 AuraContainer（自建容器 + includeSpellIDs 精确过滤）
---     特权渲染并驱动：addon 只注册子控件（Cooldown / FontString）与摆放位置，
---     不读任何光环数值 → 战斗中照常显示、零 secret 读取。
---   · CDM 的原有显示完全不动（既不隐藏也不移动），只按 spellID 读取
---     CDM item 的明文 IsActive() 作为「光环是否激活」的信号，驱动发光 / 反发光。
---   · 数字容器只挂 UIParent，用按钮的屏幕坐标（GetRect）定位，绝不把坐标锚到安全动作按钮上
---     （否则 taint 传播 → 进战斗整片消失）；发光改由内嵌 LibCustomGlow-1.0 的 Proc Glow 挂在按钮上。
---   · 战斗中绝不重建 / 销毁容器（新建只在脱战后进行），战斗中只做定位与发光更新。
+-- ⚠️ 12.1 AuraButton 安全约束（本文件所有设计都源于此；核实日期 2026-10-08，
+--    来源 Blizzard_AuraContainer 源码 Blizzard_CustomAuraButton.lua / AuraContainerUtil.lua）：
+--   AuraButton 及其子控件带 ForbiddenAspects：
+--     UntrustedScriptExecution / UntrustedLayoutScriptExecution / ChangeParent / RemoveSecretAspects。
+--   这些限制在 initializeFrame 回调【返回之后】才生效。之后 addon（tainted）对这些子控件：
+--     · SetPoint / SetSize / ClearAllPoints（布局）→ 静默失效；
+--     · SetAlpha / SetText / Show / Hide（脚本）→ 静默失效，读回的是 secret 值。
+--   ⇒ 子控件的创建、注册、定位、样式【只能】在 initializeFrame 回调内完成。
+--   ⇒ 之后 addon 只能操作【自己创建的容器】（普通帧，不受限）：
+--        移动 / 改尺寸容器 → 子控件随之移动（AuraButton 由 SetAllPoints(container) 跟随）。
+--   ⇒ 「时间 / 层数位置」这类会改变子控件锚点的选项，只能在【重建容器】时应用
+--      （选项仅允许脱战修改，重建也只在脱战进行）。
+--
+-- 其余要点：
+--   · 倒计时 / 层数由暴雪特权层驱动（SetDurationCooldown / SetApplicationCount），
+--     addon 零读取光环数值 → 战斗中照常显示、无 secret 问题。
+--   · CDM 的原有显示完全不动（不隐藏 / 不移动），只读 CDM item 的明文 IsActive() 驱动发光。
+--   · 容器只挂 UIParent（绝不锚到安全动作按钮）；发光用内嵌 LibCustomGlow-1.0 挂按钮上。
 
 local B = EasyButtonAuraByCDM
 local S = B.Style
 
 local DOCK_X, DOCK_Y = -10000, -10000
+
+-- 时间 / 层数在按钮四周时的固定像素外距与缩放
+local SIDE_GAP = 10
+local SIDE_SCALE = 0.68
+-- 按钮尺寸变化超过该像素数才重建容器（避免抖动引发重建循环）
+local SIZE_EPS = 2
 
 -- spellID -> entry
 local entries = {}
@@ -67,6 +82,59 @@ local function SetGlowMode(e, mode)
 end
 
 -- =========================================================
+-- 几何
+-- =========================================================
+-- 按钮当前 rect → UIParent 坐标系的 (rx, ry, cw, ch)。按钮不可见 / 未定位时返回 nil。
+local function ButtonRect(btn)
+    if not btn then return nil end
+    local left, bottom, width, height = btn:GetRect()
+    if not left then return nil end
+    local r = 1
+    local bs, ps = btn:GetEffectiveScale(), UIParent:GetEffectiveScale()
+    if bs and ps and ps > 0 then r = bs / ps end
+    return left * r, bottom * r, width * r, height * r
+end
+
+-- 倒计时框锚点。⚠️ 只在 initializeFrame 回调内调用（见文件头说明）。
+-- 位置选项 up/down/left/right/none 在此生效；默认档 = 按钮左下角 62% 框
+-- （与上游 ActionbarEnhanced Manual / Preset 同一几何）。
+local function AnchorTime(cd, btn, cw, ch, pos)
+    cd:ClearAllPoints()
+    if pos == "up" then
+        cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
+        cd:SetPoint("CENTER", btn, "TOP", 0, SIDE_GAP)
+    elseif pos == "down" then
+        cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
+        cd:SetPoint("CENTER", btn, "BOTTOM", 0, -SIDE_GAP)
+    elseif pos == "left" then
+        cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
+        cd:SetPoint("CENTER", btn, "LEFT", -SIDE_GAP, 0)
+    elseif pos == "right" then
+        cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
+        cd:SetPoint("CENTER", btn, "RIGHT", SIDE_GAP, 0)
+    else
+        cd:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 1, -6)
+        cd:SetPoint("TOPRIGHT", btn, "BOTTOMLEFT", cw * 0.62, ch * 0.62 - 7)
+    end
+end
+
+-- 层数文字锚点。⚠️ 同样只在 initializeFrame 回调内调用。
+local function AnchorStacks(fs, btn, pos)
+    fs:ClearAllPoints()
+    if pos == "up" then
+        fs:SetPoint("CENTER", btn, "TOP", 0, SIDE_GAP)
+    elseif pos == "down" then
+        fs:SetPoint("CENTER", btn, "BOTTOM", 0, -SIDE_GAP)
+    elseif pos == "left" then
+        fs:SetPoint("CENTER", btn, "LEFT", -SIDE_GAP, 0)
+    elseif pos == "right" then
+        fs:SetPoint("CENTER", btn, "RIGHT", SIDE_GAP, 0)
+    else
+        fs:SetPoint("TOPLEFT", btn, "TOPLEFT", 5, -5)
+    end
+end
+
+-- =========================================================
 -- 容器创建（暴雪 AuraContainer；只在脱战时创建，战斗中延后）
 -- =========================================================
 -- 决定容器的追踪单位 + 过滤串。
@@ -99,37 +167,53 @@ local function BuildContainer(e)
 
     local unit, filterString = ResolveUnitAndFilter(spellID)
 
+    -- 先量好按钮尺寸：容器必须【在 AddAuraSlot 之前】就是最终尺寸，
+    -- 因为 initializeFrame 回调是同步执行的，回调里要用 cw/ch 计算比例锚点。
+    local rx, ry, cw, ch = ButtonRect(e.button)
+    if not cw or cw <= 0 then cw, ch = 36, 36 end
+
+    local timePos, stackPos = B.GetDisplayOptions(spellID)
+
     local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
     container:SetFrameStrata("HIGH")
     container:SetFrameLevel(900)
-    container:SetSize(36, 36)
+    container:SetSize(cw, ch)
     container:SetUnit(unit)
     container:SetEnabled(true)
     container:EnableMouse(false)   -- 覆盖在动作按钮之上，绝不拦截点击（自有帧，非受保护帧，安全）
-    e.container = container
+    e.container = containe
     e.unit = unit
     e.filterString = filterString
+    e.cd, e.fs, e.auraButton = nil, nil, nil
 
-    -- ⚠️ initializeFrame 是【同步】回调，回调里 e.container 必须已就绪
+    -- ⚠️ 子控件的一切操作必须在这个回调内完成（回调返回后即受限，见文件头）
     local ok = pcall(function()
         container:AddAuraSlot("ebac", filterString, {
             candidateFilters = { includeSpellIDs = includeSpellIDs },
             initializeFrame = function(btn)
                 btn:SetAllPoints(container)
-                local cd = CreateFrame("Cooldown", nil, btn)
-                cd:SetDrawSwipe(false)
-                cd:SetDrawEdge(false)
-                cd:SetHideCountdownNumbers(false)
-                btn:SetDurationCooldown(cd)
-                e.cd = cd
-                e._cdStyled = nil
 
-                local fs = btn:CreateFontString(nil, "OVERLAY")
-                fs:SetPoint("TOPLEFT", btn, "TOPLEFT", 5, -5)
-                fs:SetFont(S.FONT, S.FONT_SIZE, S.OUTLINE)
-                fs:SetTextColor(S.STACK_COLOR[1], S.STACK_COLOR[2], S.STACK_COLOR[3])
-                btn:SetApplicationCount(fs)
-                e.fs = fs
+                -- 倒计时（"none" 档不注册 → 按钮上不显示任何剩余时间）
+                if timePos ~= "none" then
+                    local cd = CreateFrame("Cooldown", nil, btn)
+                    cd:SetDrawSwipe(false)
+                    cd:SetDrawEdge(false)
+                    cd:SetHideCountdownNumbers(false)
+                    AnchorTime(cd, btn, cw, ch, timePos)
+                    btn:SetDurationCooldown(cd)
+                    e.cd = cd
+                    e._cdStyled = nil
+                end
+
+                -- 层数（"none" 档不注册；暴雪也只在层数 >1 时显示）
+                if stackPos ~= "none" then
+                    local fs = btn:CreateFontString(nil, "OVERLAY")
+                    fs:SetFont(S.FONT, S.FONT_SIZE, S.OUTLINE)
+                    fs:SetTextColor(S.STACK_COLOR[1], S.STACK_COLOR[2], S.STACK_COLOR[3])
+                    AnchorStacks(fs, btn, stackPos)
+                    btn:SetApplicationCount(fs)
+                    e.fs = fs
+                end
 
                 e.auraButton = btn
             end,
@@ -143,11 +227,34 @@ local function BuildContainer(e)
         return false
     end
     e._initFailed = nil
-    -- 重建后子控件是全新的、且容器尚未定位 → 清掉布局 / 位置缓存，强制下一次 UpdateEntry 重新摆放
-    e._layoutKey = nil
-    e._rectL, e._rectB, e._rectW, e._rectH = nil, nil, nil, nil
+    -- 重建后子控件是全新的 → 清掉位置缓存，强制下一次 UpdateEntry 重新摆放
+    e._px, e._py, e._pw, e._ph = nil, nil, nil, nil
+    e._builtTimePos, e._builtStackPos = timePos, stackPos
+    e._builtW, e._builtH = cw, ch
+    container:ClearAllPoints()
+    if rx then
+        container:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", rx, ry + ch)
+        e._px, e._py, e._pw, e._ph = rx, ry, cw, ch
+        e._docked = false
+    else
+        -- 按钮尚未定位（GetRect 为 nil）：先停靠到屏幕外，等 UpdateEntry 拿到 rect 再摆正
+        container:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", DOCK_X, DOCK_Y)
+        e._docked = true
+    end
     container:Show()
     return true
+end
+
+-- 销毁并重建容器（仅脱战）。用于：单位变化 / 位置选项变化 / 按钮尺寸变化。
+local function RebuildContainer(e)
+    if e.container then
+        e._docked = true
+        e.container:Hide()
+        e.container = nil
+    end
+    e.auraButton, e.cd, e.fs = nil, nil, nil
+    e._px, e._py, e._pw, e._ph = nil, nil, nil, nil
+    return BuildContainer(e)
 end
 
 local function EnsureEntry(spellID)
@@ -165,7 +272,6 @@ local function EnsureEntry(spellID)
         entries[spellID] = e
     end
     if e.container then
-        -- 上次 AddAuraSlot 失败 / 单位变化：重建容器
         e.container:Hide()
         e.container = nil
         e.auraButton, e.cd, e.fs = nil, nil, nil
@@ -184,67 +290,14 @@ function B.ResetInitFailed()
 end
 
 -- =========================================================
--- 布局
+-- 倒计时数字字体（best-effort：受限帧上的 SetFont 可能静默失效，失败即放弃）
 -- =========================================================
--- 倒计时框锚定：一律用【绝对屏幕坐标】锚到 UIParent。
--- AuraContainer 的 flow layout 会在光环变化时异步覆盖容器尺寸，若相对容器 / 按钮锚定会跟着错位。
-local function ApplyCdLayout(e, rx, ry, cw, ch, timePos, visible)
-    local cd = e.cd
-    if not cd then return end
-    if timePos == "none" or visible == false then
-        cd:SetAlpha(0)
-        return
-    end
-    cd:SetAlpha(1)
-    cd:ClearAllPoints()
-    if timePos == "up" then
-        cd:SetSize(cw * 0.68, ch * 0.68)
-        cd:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx + cw / 2, ry + ch + 10)
-    elseif timePos == "down" then
-        cd:SetSize(cw * 0.68, ch * 0.68)
-        cd:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx + cw / 2, ry - 10)
-    elseif timePos == "left" then
-        cd:SetSize(cw * 0.68, ch * 0.68)
-        cd:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx - 10, ry + ch / 2)
-    elseif timePos == "right" then
-        cd:SetSize(cw * 0.68, ch * 0.68)
-        cd:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx + cw + 10, ry + ch / 2)
-    else
-        -- 默认：按钮左下角 62% 框（与上游 Manual / Preset 同一几何）
-        cd:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", rx + 1, ry - 6)
-        cd:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", rx + cw * 0.62, ry + ch * 0.62 - 7)
-    end
-end
-
-local function ApplyFsLayout(e, rx, ry, cw, ch, stackPos, visible)
-    local fs = e.fs
-    if not fs then return end
-    if stackPos == "none" or visible == false then
-        fs:SetAlpha(0)
-        return
-    end
-    fs:SetAlpha(1)
-    fs:ClearAllPoints()
-    if stackPos == "up" then
-        fs:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx + cw / 2, ry + ch + 10)
-    elseif stackPos == "down" then
-        fs:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx + cw / 2, ry - 10)
-    elseif stackPos == "left" then
-        fs:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx - 10, ry + ch / 2)
-    elseif stackPos == "right" then
-        fs:SetPoint("CENTER", UIParent, "BOTTOMLEFT", rx + cw + 10, ry + ch / 2)
-    else
-        -- 默认：左上角
-        fs:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", rx + 5, ry + ch - 5)
-    end
-end
-
--- 倒计时数字的 FontString 要等暴雪首次驱动后才有；低频轮询，设置一次即标记完成
 local function ApplyCountdownFont(e)
     local cd = e.cd
     if not cd or e._cdStyled then return end
-    local cds = cd.GetCountdownFontString and cd:GetCountdownFontString()
-    if not cds then return end
+    local cds
+    local ok = pcall(function() cds = cd.GetCountdownFontString and cd:GetCountdownFontString() end)
+    if not ok or not cds then return end
     local c = S.TIME_COLOR
     pcall(function()
         cds:SetFont(S.FONT, S.FONT_SIZE, S.OUTLINE)
@@ -254,15 +307,14 @@ local function ApplyCountdownFont(e)
 end
 
 -- =========================================================
--- 光环是否存在（发光 / 反发光信号）
+-- 光环是否存在（发光 / 反发光信号，兼作「数字是否显示」的开关）
 --   优先 CDM item 的明文 IsActive()（战斗中可读）；
---   无 CDM 帧时回退 AuraButton:IsShown()；都无法判定时沿用上次已知状态（粘滞，避免误报）
+--   无 CDM 帧时回退 AuraButton:IsShown()（12.1 下多半是 secret → 无法判定）；
+--   都无法判定时沿用上次已知状态（粘滞，避免误报）
 -- =========================================================
 local function AuraPresent(e, item)
     local f = item or (B.FindFrameForSpell and B.FindFrameForSpell(e.spellID))
     if f then e.frame = f end
-    -- 优先 CDM item 的明文 IsActive()；当前帧找不到时，退回上次缓存帧（需校验其仍属于本 spell，
-    -- 否则 CDM 复用帧会读到别的光环的状态）。
     local probe = f
     if not probe and e.frame and e.frame.__EBACSpellID == e.spellID then probe = e.frame end
     local v = B.IsItemActive(probe)
@@ -288,60 +340,62 @@ end
 -- =========================================================
 -- 单个条目的显示 / 停靠
 -- =========================================================
--- 收起倒计时 / 层数（alpha 0，不用 Hide：不与暴雪驱动争抢显隐）
-local function HideNumbers(e)
-    if e.cd then e.cd:SetAlpha(0) end
-    if e.fs then e.fs:SetAlpha(0) end
+-- 停靠到屏幕外（不用 Hide：需保持可见才继续接收 UNIT_AURA，
+-- ShouldRegisterForDynamicEvents = IsVisible and IsEnabled）。
+-- 子控件随容器一起移出屏幕 —— 受限帧上无法用 SetAlpha/Hide 单独收起数字。
+local function DockContainer(e)
+    local c = e.containe
+    if not c then return end
+    if e._docked then return end
+    c:ClearAllPoints()
+    c:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", DOCK_X, DOCK_Y)
+    e._docked = true
+    e._px, e._py, e._pw, e._ph = nil, nil, nil, nil
 end
 
 local function HideEntry(e)
-    if not e.container then return end
-    if e._rectL ~= DOCK_X then
-        e.container:ClearAllPoints()
-        e.container:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", DOCK_X, DOCK_Y)
-        e._rectL = DOCK_X
-        e._rectB, e._rectW, e._rectH = nil, nil, nil
-    end
-    HideNumbers(e)
+    DockContainer(e)
     SetGlowMode(e, "none")
     e.visible = false
 end
 
 local function UpdateEntry(e, btn)
-    local left, bottom, width, height = btn:GetRect()
-    if not left then
+    local rx, ry, cw, ch = ButtonRect(btn)
+    if not rx then
         HideEntry(e)
         return
     end
-    local r = 1
-    local bs, ps = btn:GetEffectiveScale(), UIParent:GetEffectiveScale()
-    if bs and ps and ps > 0 then r = bs / ps end
-    local rx, ry = left * r, bottom * r
-    local cw, ch = width * r, height * r
+
+    -- 按钮尺寸变了（UI 缩放 / 动作条缩放 / 编辑模式改尺寸）→ 比例锚点需按新尺寸重算。
+    -- 受限帧无法在回调外改锚点，只能重建容器。仅脱战重建。
+    if e._builtW and (math.abs(e._builtW - cw) > SIZE_EPS or math.abs(e._builtH - ch) > SIZE_EPS)
+        and not InCombatLockdown() then
+        if not RebuildContainer(e) then return end
+        rx, ry, cw, ch = ButtonRect(btn)
+        if not rx then
+            HideEntry(e)
+            return
+        end
+    end
 
     local timePos, stackPos, glowOn, inverseOn = B.GetDisplayOptions(e.spellID)
 
-    -- 光环是否存在：不存在时必须把数字 / 层数收起。暴雪只会在【自己】单位的 AuraButton 上
-    -- 清掉 duration cooldown；目标 debuff 消失（切目标 / 翻页）后不会清我们的倒计时 → 数字滞留。
+    -- 光环不存在：连容器一起停靠（数字随之移出屏幕），并撤下发光以外的显示。
     local present = AuraPresent(e)
     local showNum = (present ~= false)
 
-    -- 容器：自有帧，SetPoint / SetSize 战斗安全。
-    -- 位置可缓存；尺寸每次都设（对抗 AuraContainer flow layout 的异步尺寸覆盖）。
-    if e._rectL ~= left or e._rectB ~= bottom or e._rectW ~= width or e._rectH ~= height then
-        e.container:ClearAllPoints()
-        e.container:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", rx, ry + ch)
-        e._rectL, e._rectB, e._rectW, e._rectH = left, bottom, width, height
-    end
-    e.container:SetSize(cw, ch)
-    e.container:Show()   -- 保持可见以接收 UNIT_AURA（ShouldRegisterForDynamicEvents = IsVisible and IsEnabled）
-
-    -- 子控件布局：几何 / 选项 / 显隐未变则跳过（子控件用绝对屏幕坐标，容器尺寸变化不影响它们）
-    local key = table.concat({ timePos, stackPos, rx, ry, cw, ch, showNum and "1" or "0" }, ":")
-    if e._layoutKey ~= key then
-        e._layoutKey = key
-        ApplyCdLayout(e, rx, ry, cw, ch, timePos, showNum)
-        ApplyFsLayout(e, rx, ry, cw, ch, stackPos, showNum)
+    if showNum then
+        if e._docked or e._px ~= rx or e._py ~= ry or e._pw ~= cw or e._ph ~= ch then
+            e.container:ClearAllPoints()
+            e.container:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", rx, ry + ch)
+            e._px, e._py, e._pw, e._ph = rx, ry, cw, ch
+            e._docked = false
+        end
+        -- 尺寸每次都设：对抗 AuraContainer flow layout 的异步尺寸覆盖
+        e.container:SetSize(cw, ch)
+        e.container:Show()
+    else
+        DockContainer(e)
     end
 
     ApplyCountdownFont(e)
@@ -373,18 +427,28 @@ function B.RebuildEntries()
     for spellID, cfg in pairs(bindings) do
         local target = cfg.bindSpell
         local buttonName = target and map[target]
+        local e = entries[spellID]
         if buttonName then
-            local e = EnsureEntry(spellID)
-            if e then
-                e.buttonName = buttonName
-                e.button = _G[buttonName]
+            -- ⚠️ 先填好 button 再建容器：BuildContainer 要量按钮尺寸来算比例锚点
+            if not e then
+                e = { spellID = spellID }
+                entries[spellID] = e
+            end
+            e.buttonName = buttonName
+            e.button = _G[buttonName]
+            local ready = EnsureEntry(spellID)
+            if ready then
+                -- 位置选项变了 → 受限帧无法在回调外改锚点，只能重建容器把新位置应用进去
+                local tPos, sPos = B.GetDisplayOptions(spellID)
+                if ready.container and (ready._builtTimePos ~= tPos or ready._builtStackPos ~= sPos) then
+                    RebuildContainer(ready)
+                end
             end
         else
-            local e = entries[spellID]
-            if e then
-                e.button, e.buttonName = nil, nil
-                e._layoutKey = nil
-                HideEntry(e)
+            local dead = entries[spellID]
+            if dead then
+                dead.button, dead.buttonName = nil, nil
+                HideEntry(dead)
             end
         end
     end
@@ -394,7 +458,6 @@ function B.RebuildEntries()
         local cfg = bindings[spellID]
         if not (cfg and cfg.bindSpell) then
             e.button, e.buttonName = nil, nil
-            e._layoutKey = nil
             HideEntry(e)
         end
     end
@@ -410,7 +473,6 @@ function B.HideStaleEntries()
             local match = B.ButtonMatchesBinding and B.ButtonMatchesBinding(e.buttonName, spellID)
             if match == false then
                 e.button, e.buttonName = nil, nil
-                e._layoutKey = nil
                 HideEntry(e)
             end
         end
