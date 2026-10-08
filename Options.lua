@@ -19,8 +19,9 @@ local B = EasyButtonAuraByCDM
 local L = B.L
 
 -- 配置窗口宽度：过宽会超出小屏，行内控件按固定列排布。
--- ROW_W 额外扣掉右侧留给暴雪滚动条的空间（UIPanelScrollFrameTemplate 的滚动条
--- 叠在滚动区右缘约 16px），否则最右侧的「反发光」文字会被滚动条压住 / 裁掉。
+-- 列表区用 UIPanelScrollFrameTemplate：其滚动条【默认锚在滚动区右侧外部】，
+-- 会越过窗口右边界（曾反馈「滚动条超出了右边界」）。BuildConfigFrame 里已显式
+-- ClearAllPoints 后把它重锚到滚动区【内部右缘】，故此处只需扣掉左右留白即可。
 local PANEL_W = 680
 local ROW_W   = PANEL_W - 44
 local ROW_H   = 56
@@ -30,7 +31,8 @@ local VISIBLE_ROWS = 7
 local LIST_H = VISIBLE_ROWS * ROW_H
 
 -- 行内第二行控件的横坐标（相对 row 左侧）与宽度。
--- 最右「反发光 / Missing」标签右端需与滚动区右缘留出余量（本组约 40px），否则显拥挤。
+-- 最右「反发光 / Missing」标签右端需与滚动区右缘留出余量：滚动条重锚后占滚动区
+-- 最右约 16px，余量不足会被压住 / 裁掉（本组余量约 40px）。
 local X_EDIT,    W_EDIT    = 54, 140
 local X_TIME,    W_TIME    = 202, 106
 local X_STACK,   W_STACK   = 316, 110
@@ -379,7 +381,7 @@ local function BuildConfigFrame()
     configFrame.scroll:SetSize(ROW_W, LIST_H)
     configFrame.scroll:EnableMouseWheel(true)
     configFrame.scroll:SetScript("OnMouseWheel", function(self, delta)
-        local bar = self.scrollBar
+        local bar = self.ScrollBar or _G["EasyButtonAuraByCDMConfigScrollScrollBar"]
         if not bar or not bar:IsShown() then return end
         local lo, hi = bar:GetMinMaxValues()
         local v = (bar:GetValue() or 0) - delta * ROW_H
@@ -391,6 +393,18 @@ local function BuildConfigFrame()
     configFrame.rows:SetPoint("TOPLEFT", configFrame.scroll, "TOPLEFT", 0, 0)
     configFrame.rows:SetSize(ROW_W, LIST_H)
     configFrame.scroll:SetScrollChild(configFrame.rows)
+
+    -- ⚠️ UIPanelScrollFrameTemplate 的滚动条【默认锚在滚动区右侧外部】（右缘约在滚动区右缘
+    -- 之外 13px），会越过窗口右边界（用户反馈「滚动条超出了右边界」）。
+    -- 注意模板把滚动条存在 `ScrollBar` 字段（大写 S）、全局名 <帧名>.."ScrollBar"。
+    -- 这里显式 ClearAllPoints，再把滚动条【右缘】贴到滚动区【内部右缘】（内缩 2px），
+    -- 这样无论滚动条多宽都完整落在滚动区（进而窗口）内。
+    local bar = configFrame.scroll.ScrollBar or _G["EasyButtonAuraByCDMConfigScrollScrollBar"]
+    if bar then
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPRIGHT", configFrame.scroll, "TOPRIGHT", -2, -14)
+        bar:SetPoint("BOTTOMRIGHT", configFrame.scroll, "BOTTOMRIGHT", -2, 14)
+    end
 
     -- 窗口显隐：驱动主文件的低频签名巡检（窗口打开时保持 CDM 列表最新）
     configFrame:SetScript("OnShow", function()
