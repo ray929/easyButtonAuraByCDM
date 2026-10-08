@@ -489,10 +489,13 @@ local function BuildBlizzardStub()
     -- 页面顶部标题（英文插件名，Chattynator 风格）：左侧分类树有名字，页内自身也要有
     local title = stub:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOP", stub, "TOP", 0, -18)
+    -- 金色大字（与插件图标同色系，#E8BC75 直方图采样主峰）
+    title:SetFont(STANDARD_TEXT_FONT, 22, "")
+    title:SetTextColor(0.910, 0.737, 0.459)
     title:SetText(ADDON_TITLE)
 
     local hint = stub:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hint:SetPoint("TOP", stub, "TOP", 0, -58)
+    hint:SetPoint("TOP", stub, "TOP", 0, -64)
     hint:SetWidth(STUB_W - 40)
     hint:SetJustifyH("CENTER")
     hint:SetText(L("STUB_HINT"))
