@@ -5,7 +5,7 @@
 ## Notes-zhTW: 把暴雪冷卻管理器(CDM)中的增益光環手動綁定到快捷列按鈕：在按鈕上顯示該光環的剩餘時間與堆疊數量，可選發光／反發光提醒。
 ## Author: ray929
 ## Version: @project-version@
-## SavedVariablesPerCharacter: easyButtonAuraByCDMDB
+## SavedVariablesPerCharacter: easyButtonAuraByCDMDB EasyMinimapHubDB
 ## DefaultState: enabled
 ## Category: Action Bars
 ## Category-zhCN: 动作条
@@ -18,3 +18,4 @@ Libs\LibCustomGlow-1.0\LibCustomGlow-1.0.lua
 easyButtonAuraByCDM.lua
 AuraDisplay.lua
 Options.lua
+MinimapHub.lua
