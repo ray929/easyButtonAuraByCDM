@@ -26,6 +26,29 @@ if not HUB then
     IS_CREATOR = true
 end
 
+-- =========================================================
+-- Easy 系配置窗口互斥：同时只显示一个配置窗口。
+-- 各插件 Options 在显示自身窗口时调用 NotifyConfigFrameShown(frame)，
+-- 其他已显示的插件配置窗口会被收起（多个窗口叠在一起没法用）。
+-- 注意：本函数在每个插件拷贝里都会重定义一次（三份实现一致，最后加载者
+-- 生效），状态存在函数闭包里，与具体哪份拷贝执行无关。
+-- =========================================================
+local configFrames = {}
+function HUB.NotifyConfigFrameShown(frame)
+    if not frame then return end
+    local known = false
+    for _, f in ipairs(configFrames) do
+        if f == frame then
+            known = true
+        elseif f.IsShown and f:IsShown() then
+            f:Hide()
+        end
+    end
+    if not known then
+        configFrames[#configFrames + 1] = frame
+    end
+end
+
 -- 三语文案（仅创建者用到，但三份拷贝都带全，保证逻辑一致）
 local L = (function()
     local loc = GetLocale()
