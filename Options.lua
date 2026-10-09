@@ -286,7 +286,10 @@ local function DoRefresh()
     if not configFrame then return end
     B._inCombat = InCombatLockdown() and true or false
 
-    configFrame.specText:SetText(L("SPEC_LABEL") .. ": " .. B.GetCurrentSpecName())
+    -- 头部信息行：当前职业（数据条目按职业过滤）+ 配置专精（存档槽位）
+    configFrame.specText:SetText(
+        L("CLASS_LABEL") .. ": " .. (UnitClass("player"))
+        .. "　　" .. L("SPEC_LABEL") .. ": " .. B.GetCurrentSpecName())
     if configFrame.enableCheck then
         configFrame.enableCheck:SetChecked(B.IsEnabled and B.IsEnabled() or false)
     end
@@ -372,8 +375,8 @@ local function BuildConfigFrame()
     configFrame.specText = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     configFrame.specText:SetPoint("TOPLEFT", 16, -36)
 
-    -- 全局启用开关（角色级、不分专精；窗口右上角）。标签锚在复选框【左侧】，
-    -- 避免标签向右伸出窗口右边界（滚动条那次同类越界问题的经验）。
+    -- 启用开关（专精级：只关当前专精的显示；整体关闭请禁用插件）。
+    -- 标签锚在复选框【左侧】，避免标签向右伸出窗口右边界（滚动条那次同类越界问题的经验）。
     configFrame.enableCheck = CreateFrame("CheckButton", nil, configFrame, "UICheckButtonTemplate")
     configFrame.enableCheck:SetSize(24, 24)
     configFrame.enableCheck:SetPoint("TOPRIGHT", -16, -34)

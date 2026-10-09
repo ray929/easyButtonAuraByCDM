@@ -30,9 +30,10 @@ B.LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 -- =========================================================
 local LOCALES = {
     enUS = {
-        SPEC_LABEL        = "Current Specialization",
+        SPEC_LABEL        = "Config Spec",
+        CLASS_LABEL       = "Current Class",
         SPEC_UNKNOWN      = "Unknown",
-        ENABLE            = "Global Enable",
+        ENABLE            = "Enable",
         PAGE_DESC         = "Bind auras from Blizzard's Cooldown Manager to action bar buttons. The Cooldown Manager display itself is left untouched.",
         NO_AURAS          = "No auras found. Enable buffs in Blizzard's Cooldown Manager (Buffs) first, then reopen this page.",
         COL_BIND          = "Bind",
@@ -54,9 +55,10 @@ local LOCALES = {
         STUB_HINT         = "Click the button below, or type /babc, to open the configuration window.",
     },
     zhCN = {
-        SPEC_LABEL        = "当前专精",
+        SPEC_LABEL        = "配置专精",
+        CLASS_LABEL       = "当前职业",
         SPEC_UNKNOWN      = "未知",
-        ENABLE            = "全局启用",
+        ENABLE            = "启用",
         PAGE_DESC         = "把暴雪冷却管理器中的增益光环手动绑定到动作条按钮。冷却管理器本身的显示保持原样。",
         NO_AURAS          = "未找到可绑定的光环。请先在暴雪冷却管理器的「增益」里启用要追踪的光环，然后重新打开本页面。",
         COL_BIND          = "绑定",
@@ -78,9 +80,10 @@ local LOCALES = {
         STUB_HINT         = "点击按钮，或者输入 /babc 打开配置窗口。",
     },
     zhTW = {
-        SPEC_LABEL        = "目前專精",
+        SPEC_LABEL        = "配置專精",
+        CLASS_LABEL       = "目前職業",
         SPEC_UNKNOWN      = "未知",
-        ENABLE            = "全域啟用",
+        ENABLE            = "啟用",
         PAGE_DESC         = "把暴雪冷卻管理器中的增益光環手動綁定到快捷列按鈕。冷卻管理器本身的顯示維持原樣。",
         NO_AURAS          = "找不到可綁定的光環。請先在暴雪冷卻管理器的「增益」中啟用要追蹤的光環，然後重新開啟本頁面。",
         COL_BIND          = "綁定",
@@ -554,9 +557,11 @@ function B.GetSpellDisplayName(spellID)
 end
 
 -- =========================================================
--- 存档：全局开关（角色级）+ 绑定（按专精）
--- easyButtonAuraByCDMDB.enabled = true|false                          （角色级，所有专精共用）
--- easyButtonAuraByCDMDB.specs[specID] = { bindings = { [auraSpellID] = cfg } }
+-- 存档：全部配置都在专精级 specs[specID] 子表（2026-10-09 起启用开关也下沉；
+-- 想整体关闭直接在插件列表禁用插件即可，无需保留角色级开关）
+-- easyButtonAuraByCDMDB.specs[specID] = { enabled = true|false,
+--                                         bindings = { [auraSpellID] = cfg } }
+--   enabled：本专精显示开关（旧版角色级根字段仅在 SelectSpec 作为迁移种子读取）
 --   cfg = { bindSpell = <目标技能 spellID，nil = 未绑定>,
 --           timePos = "default|up|down|left|right|none",
 --           stackPos = 同上, glow = bool, inverseGlow = bool }
@@ -574,22 +579,23 @@ end
 
 function B.InitStorage()
     easyButtonAuraByCDMDB = easyButtonAuraByCDMDB or {}
-    if easyButtonAuraByCDMDB.enabled == nil then
-        easyButtonAuraByCDMDB.enabled = true
-    end
+    -- enabled 已下沉为专精级（specs[specID].enabled）：
+    -- 根级旧字段仅作为迁移种子保留（见 SelectSpec），不再读写、不再设默认值。
     if not easyButtonAuraByCDMDB.specs then
         easyButtonAuraByCDMDB.specs = { [0] = { bindings = {} } }
     end
 end
 
--- 全局开关（角色级，所有专精共用；关闭 = 撤下全部覆盖层 + 停全部发光）
+-- 启用开关（专精级：只关当前专精的显示；整体关闭请禁用插件）
 function B.IsEnabled()
+    if B.db then return B.db.enabled ~= false end
+    -- PLAYER_LOGIN 前尚未选择专精槽：回退读根级旧字段（迁移种子，语义不变）
     return easyButtonAuraByCDMDB and easyButtonAuraByCDMDB.enabled ~= false
 end
 
 function B.SetEnabled(v)
-    B.InitStorage()
-    easyButtonAuraByCDMDB.enabled = v and true or false
+    B.SelectSpec()
+    B.db.enabled = v and true or false
     -- 关闭 / 开启都走一次重建：RebuildEntries → RefreshAll 会按开关状态撤下 / 恢复覆盖层与发光
     if B.RebuildEntries then B.RebuildEntries() end
     if B.RefreshPanel then B.RefreshPanel() end
@@ -604,6 +610,11 @@ function B.SelectSpec(specID)
         specs[specID] = { bindings = {} }
     end
     specs[specID].bindings = specs[specID].bindings or {}
+    -- 旧版迁移：enabled 曾是角色级根字段 → 首次进入某专精槽时种入该槽
+    -- （根字段保留不清除：先建的槽先继承，之后新出现的专精槽也能从旧值继承）
+    if specs[specID].enabled == nil then
+        specs[specID].enabled = (easyButtonAuraByCDMDB.enabled ~= false)
+    end
     B.db = specs[specID]
     B.currentSpecID = specID
     B.NotifyBindingsChanged()
