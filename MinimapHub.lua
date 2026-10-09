@@ -182,7 +182,17 @@ if IS_CREATOR then
         for i = n + 1, #pool do
             pool[i]:Hide()
         end
-        menu:SetSize(210, PAD * 2 + n * ITEM_H)
+        -- 宽度按最长菜单项实测自适应，避免长标题溢出边框
+        local textW = 0
+        for i = 1, n do
+            local w = pool[i].text:GetStringWidth()
+            if w > textW then textW = w end
+        end
+        local menuW = 8 + 16 + 6 + math.ceil(textW) + 12 -- 左缘距 + 图标 + 图文间距 + 右缘距
+        for i = 1, n do
+            pool[i]:SetSize(menuW - 16, ITEM_H)
+        end
+        menu:SetSize(menuW, PAD * 2 + n * ITEM_H)
         -- 固定弹出在按钮左侧：锚点用菜单右缘对齐按钮左缘（用户指定，不做方位翻转）
         menu:ClearAllPoints()
         menu:SetPoint("TOPRIGHT", btn, "TOPLEFT", -6, 4)
