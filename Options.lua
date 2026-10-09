@@ -361,15 +361,15 @@ local function BuildConfigFrame()
     local titleText = (configFrame.TitleContainer and configFrame.TitleContainer.TitleText) or configFrame.TitleText
     if titleText then titleText:SetText(ADDON_TITLE) end
 
-    -- 顶部提示：当前专精 + 一句话说明（用户要求配置页上也有一句提示）
+    -- 标题栏下分割线（三窗统一）
+    configFrame.divTitle = configFrame:CreateTexture(nil, "ARTWORK")
+    configFrame.divTitle:SetColorTexture(0.7, 0.7, 0.7, 0.35)
+    configFrame.divTitle:SetSize(PANEL_W - 24, 1)
+    configFrame.divTitle:SetPoint("TOPLEFT", 12, -31)
+
+    -- 顶部提示：当前专精（说明文字已按用户要求去掉）
     configFrame.specText = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     configFrame.specText:SetPoint("TOPLEFT", 16, -36)
-
-    configFrame.desc = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    configFrame.desc:SetPoint("TOPLEFT", configFrame.specText, "BOTTOMLEFT", 0, -8)
-    configFrame.desc:SetWidth(PANEL_W - 40)
-    configFrame.desc:SetJustifyH("LEFT")
-    configFrame.desc:SetText(L("PAGE_DESC"))
 
     -- 全局启用开关（角色级、不分专精；窗口右上角）。标签锚在复选框【左侧】，
     -- 避免标签向右伸出窗口右边界（滚动条那次同类越界问题的经验）。
@@ -389,7 +389,7 @@ local function BuildConfigFrame()
     configFrame.enableCheck:SetChecked(B.IsEnabled and B.IsEnabled() or false)
 
     configFrame.noAuras = configFrame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    configFrame.noAuras:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 0, -12)
+    configFrame.noAuras:SetPoint("TOPLEFT", configFrame.specText, "BOTTOMLEFT", 0, -12)
     configFrame.noAuras:SetWidth(PANEL_W - 40)
     configFrame.noAuras:SetJustifyH("LEFT")
     configFrame.noAuras:SetText(L("NO_AURAS"))
@@ -397,7 +397,7 @@ local function BuildConfigFrame()
 
     -- 列表区：固定高度的滚动区（行数超过可见行数时出现滚动条，支持鼠标滚轮）
     configFrame.scroll = CreateFrame("ScrollFrame", "EasyButtonAuraByCDMConfigScroll", configFrame, "UIPanelScrollFrameTemplate")
-    configFrame.scroll:SetPoint("TOPLEFT", configFrame.desc, "BOTTOMLEFT", 8, -14)
+    configFrame.scroll:SetPoint("TOPLEFT", configFrame.specText, "BOTTOMLEFT", 8, -14)
     configFrame.scroll:SetSize(ROW_W, LIST_H)
     configFrame.scroll:EnableMouseWheel(true)
     configFrame.scroll:SetScript("OnMouseWheel", function(self, delta)
