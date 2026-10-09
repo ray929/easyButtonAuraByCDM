@@ -11,6 +11,7 @@
 - A global switch in the configuration window turns all bindings on or off at once (character-wide, not per specialization).
 - Settings can only be changed out of combat; the configuration window is hidden during combat and restored afterwards.
 - Works during combat. The original Cooldown Manager display is left untouched.
+- All Easy add-ons share one minimap button: left-click opens a menu to each add-on's config; right-drag moves the button.
 
 ## 简体中文
 
@@ -23,6 +24,7 @@
 - 配置窗口右上角有一个全局开关：一键启用或停用全部绑定（角色级，不分专精）。
 - 设置需在战斗外修改；战斗中配置窗口会自动隐藏，战斗结束恢复。
 - 战斗中同样生效。冷却管理器原本的显示保持原样，不会被隐藏或移动。
+- Easy 系列插件共享一个小地图按钮：左键弹菜单打开各插件配置，右键拖动移动按钮。
 
 ## 繁體中文
 
@@ -35,6 +37,7 @@
 - 設定視窗右上角有一個全域開關：一鍵啟用或停用全部綁定（角色層級，不分專精）。
 - 設定需在戰鬥外修改；戰鬥中設定視窗會自動隱藏，戰鬥結束後恢復。
 - 戰鬥中同樣有效。冷卻管理器原本的顯示維持原樣，不會被隱藏或移動。
+- Easy 系列插件共用一個小地圖按鈕：左鍵彈出選單開啟各插件設定，右鍵拖動移動按鈕。
 
 ## Credits / 致谢 / 致謝
 
