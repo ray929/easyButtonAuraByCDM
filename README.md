@@ -39,6 +39,12 @@
 - 戰鬥中同樣有效。冷卻管理器原本的顯示維持原樣，不會被隱藏或移動。
 - Easy 系列插件共用一個小地圖按鈕：左鍵彈出選單開啟各插件設定，右鍵拖動移動按鈕。
 
+## Related / 相关插件 / 相關插件
+
+[Easy Button Simplify](https://www.curseforge.com/wow/addons/easybuttonsimplify) pairs well with this add-on: it hides the native button borders, enlarges icons with a clean 1px outline and styles button text — a neater canvas for the aura display.
+[Easy Button Simplify](https://www.curseforge.com/wow/addons/easybuttonsimplify) 与本插件是绝配：隐藏原生按钮边框、图标放大并加 1px 黑描边、统一按钮文字样式——给光环显示一个更干净的按钮底面。
+[Easy Button Simplify](https://www.curseforge.com/wow/addons/easybuttonsimplify) 與本插件是絕配：隱藏原生按鈕邊框、圖示放大並加 1px 黑描邊、統一按鈕文字樣式——給光環顯示一個更乾淨的按鈕底面。
+
 ## Credits / 致谢 / 致謝
 
 Thanks to all addon developers for their work and inspiration.
