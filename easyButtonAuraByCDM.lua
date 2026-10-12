@@ -780,6 +780,9 @@ end)
 local lastSignature
 C_Timer.NewTicker(1.0, function()
     if not next(B.GetBindings()) and not B.panelShown then return end
+    -- 战斗中挂起的容器创建（RebuildEntries 战斗中只置 _pendingBuild）：脱战后补建
+    -- （RebuildEntries 自身在战斗中会早退，故这里调用是安全的；同时兜住 REGEN 事件漏触发）
+    if B._pendingBuild and B.RebuildEntries then B.RebuildEntries() end
     local sig = B.GetActiveViewerSignature()
     if sig ~= lastSignature then
         lastSignature = sig

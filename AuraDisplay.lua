@@ -295,16 +295,23 @@ local function RebuildContainer(e)
     return BuildContainer(e)
 end
 
-local function EnsureEntry(spellID)
+-- 为单个绑定【确保容器存在】（⚠️ 只创建，不挂靠）。
+-- 与「按钮是否解析到」完全无关：即便目标技能当前不在任何动作条上，也先把容器建好并停靠
+-- 屏幕外，这样任何时候（含战斗中）首次触发光环都已有容器在接收 UNIT_AURA（见坑 14）。
+-- 仅可在脱战调用（BuildContainer 内会 CreateFrame("AuraContainer")）。
+local function EnsureContainerFor(spellID)
     local e = entries[spellID]
     local wantUnit = (B.GetAuraUnit and B.GetAuraUnit(spellID)) or "player"
-    -- 单位变了（CDM 条目被改配置）→ 重建容器
-    if e and e.auraButton and e.unit == wantUnit then return e end
-    if InCombatLockdown() then
-        -- 战斗中不新建容器（等脱战后由 PLAYER_REGEN_ENABLED 补建）
-        if not e then entries[spellID] = { spellID = spellID } end
-        return nil
+    -- 容器已建且单位一致：仅当「时间 / 层数位置」选项变化时重建
+    -- （选项改的是 AuraButton 子控件锚点，回调外改不了，只能重建容器让回调按新参数布局）
+    if e and e.container and e.unit == wantUnit then
+        local tPos, sPos = B.GetDisplayOptions(spellID)
+        if e._builtTimePos ~= tPos or e._builtStackPos ~= sPos then
+            RebuildContainer(e)
+        end
+        return e
     end
+    -- 单位变了（CDM 条目被改配置）/ 尚未建 → 重建
     if not e then
         e = { spellID = spellID }
         entries[spellID] = e
@@ -452,10 +459,20 @@ function B.OnCdmItemRefreshed(spellID, item)
     B.ApplyButtonGlows()
 end
 
--- 根据当前绑定重建条目（绑定变动 / 专精切换 / 动作条变动时调用）。
--- 战斗中不重建（等脱战），避免战斗中创建容器与目标技能解析受 secret 影响。
+-- 根据当前绑定重建条目（绑定变动 / 专精切换 / 登录 / 动作条变动 / 脱战时调用）。
+-- ⚠️ 创建与挂靠【解耦】（2026-10-12）：
+--   ① 创建：为「CDM 已启用且有绑定」的每条光环【都】建容器，与「按钮是否解析到」无关；
+--      解析不到按钮的容器先停靠屏幕外，等按钮出现（脱战）再挂靠。这样任何绑定在进战斗前
+--      就已有容器在接收 UNIT_AURA，彻底消除「战斗中首次触发不显示、脱战才出现」（坑 14）。
+--   ② 挂靠：解析目标按钮引用；解析到由 RefreshAll 定位到按钮，解析不到即保持停靠。
+-- 战斗中不执行（容器只能脱战创建）：仅置 _pendingBuild，等 PLAYER_REGEN_ENABLED / 巡检补做。
 function B.RebuildEntries()
-    if not B.db or InCombatLockdown() then return end
+    if not B.db then return end
+    if InCombatLockdown() then
+        B._pendingBuild = true
+        return
+    end
+    B._pendingBuild = nil
     -- 全局开关关闭：撤下所有覆盖层 + 停发光，且不建新容器；开启后下一次重建会恢复
     if B.IsEnabled and not B.IsEnabled() then
         for _, e in pairs(entries) do
@@ -469,43 +486,29 @@ function B.RebuildEntries()
     local map = B.BuildSpellButtonMap()
     local known = B.knownBuffs or {}
 
+    -- ① 创建 + 解析按钮：仅当该光环当前仍在 CDM 中【已启用】且已绑定目标技能时才建立条目
+    --    （从 CDM 移除 / 解绑即撤下覆盖层；绑定仍保留在存档里，日后重新启用会自动恢复）。
     for spellID, cfg in pairs(bindings) do
-        local target = cfg.bindSpell
-        -- 仅当该光环当前仍在 CDM 中【已启用】时才显示；从 CDM 移除即撤下覆盖层
-        -- （绑定仍保留在存档里，日后重新启用会自动恢复显示）。
-        local buttonName
-        if known[spellID] and target then buttonName = map[target] end
-        local e = entries[spellID]
-        if buttonName then
-            -- ⚠️ 先填好 button 再建容器：BuildContainer 要量按钮尺寸来算比例锚点
+        if known[spellID] and cfg.bindSpell then
+            local e = entries[spellID]
             if not e then
                 e = { spellID = spellID }
                 entries[spellID] = e
             end
+            -- ⚠️ 先填好 button 再建容器：BuildContainer 要量按钮尺寸来算比例锚点
+            --    （按钮暂缺时为 nil → 容器按默认尺寸创建并停靠，不影响创建本身）
+            local buttonName = map[cfg.bindSpell]
             e.buttonName = buttonName
-            e.button = _G[buttonName]
+            e.button = buttonName and _G[buttonName] or nil
             e._stale = nil      -- 脱战重建即彻底重解析，清掉巡检留下的 stale 标记
-            local ready = EnsureEntry(spellID)
-            if ready then
-                -- 位置选项变了 → 受限帧无法在回调外改锚点，只能重建容器把新位置应用进去
-                local tPos, sPos = B.GetDisplayOptions(spellID)
-                if ready.container and (ready._builtTimePos ~= tPos or ready._builtStackPos ~= sPos) then
-                    RebuildContainer(ready)
-                end
-            end
-        else
-            local dead = entries[spellID]
-            if dead then
-                dead.button, dead.buttonName = nil, nil
-                HideEntry(dead)
-            end
+            EnsureContainerFor(spellID)
         end
     end
 
-    -- 已解除绑定的条目：停靠
+    -- ② 无效条目（解绑 / 该光环已从 CDM 移除 / 专精切换后不再适用）：清引用 + 停靠
     for spellID, e in pairs(entries) do
         local cfg = bindings[spellID]
-        if not (cfg and cfg.bindSpell) then
+        if not (cfg and cfg.bindSpell and known[spellID]) then
             e.button, e.buttonName = nil, nil
             HideEntry(e)
         end
@@ -555,10 +558,15 @@ function B.RefreshAll()
         return
     end
     for spellID, e in pairs(entries) do
-        if e.button and e.container then
-            local ok = pcall(UpdateEntry, e, e.button)
-            if not ok then
-                pcall(HideEntry, e)
+        if e.container then
+            if e.button then
+                local ok = pcall(UpdateEntry, e, e.button)
+                if not ok then
+                    pcall(HideEntry, e)
+                end
+            else
+                -- 尚未解析到按钮（未放置 / 未就绪）：保持停靠（容器已建好，只等挂靠）
+                HideEntry(e)
             end
         end
     end
