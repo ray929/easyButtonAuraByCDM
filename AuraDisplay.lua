@@ -219,8 +219,10 @@ local function BuildContainer(e)
         containerSupported = false
         return false
     end
-    container:SetFrameStrata("HIGH")
-    container:SetFrameLevel(900)
+    -- MEDIUM + 1000：与 easyButtonAuraByUnit 同款修法。HIGH 会压在世界地图（MEDIUM）之上；
+    -- FrameLevel 1000 押后同级内绘制顺序（见 easyButtonAuraByUnit dcb01c3）
+    container:SetFrameStrata("MEDIUM")
+    container:SetFrameLevel(1000)
     container:SetSize(cw, ch)
     container:SetUnit(unit)
     container:SetEnabled(true)
