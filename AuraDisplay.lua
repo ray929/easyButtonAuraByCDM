@@ -202,7 +202,7 @@ local function BuildContainer(e)
     -- 先量好按钮尺寸：容器必须【在 AddAuraSlot 之前】就是最终尺寸，
     -- 因为 initializeFrame 回调是同步执行的，回调里要用 cw/ch 计算比例锚点。
     local rx, ry, cw, ch = ButtonRect(e.button)
-    if not cw or cw <= 0 then cw, ch = 36, 36 end
+    if not cw or cw <= 0 then cw, ch = 42, 42 end
 
     local timePos, stackPos = B.GetDisplayOptions(spellID)
 
