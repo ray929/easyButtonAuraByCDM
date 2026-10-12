@@ -264,6 +264,7 @@ local function BuildContainer(e)
         return false
     end
     e._initFailed = nil
+    e._stale = nil   -- 容器重建 = 重新挂靠，清掉巡检留下的 stale 标记
     -- 重建后子控件是全新的 → 清掉位置缓存，强制下一次 UpdateEntry 重新摆放
     e._px, e._py, e._pw, e._ph = nil, nil, nil, nil
     e._builtTimePos, e._builtStackPos = timePos, stackPos
@@ -387,6 +388,16 @@ local function HideEntry(e)
 end
 
 local function UpdateEntry(e, btn)
+    -- 该条目已被巡检判定「按钮改作他用」（翻页 / 换技能 / 空槽）→ 保持停靠。
+    -- 战斗中 RebuildEntries 不执行，故这里【只停靠、不清引用】，技能回来后巡检清掉 _stale
+    -- 即可原位恢复（见 HideStaleEntries），不会像清引用那样「切回也不复原」。
+    if e._stale then
+        DockContainer(e)
+        e._hidden = true
+        e.visible = false
+        return
+    end
+
     local rx, ry, cw, ch = ButtonRect(btn)
     if not rx then
         HideEntry(e)
@@ -473,6 +484,7 @@ function B.RebuildEntries()
             end
             e.buttonName = buttonName
             e.button = _G[buttonName]
+            e._stale = nil      -- 脱战重建即彻底重解析，清掉巡检留下的 stale 标记
             local ready = EnsureEntry(spellID)
             if ready then
                 -- 位置选项变了 → 受限帧无法在回调外改锚点，只能重建容器把新位置应用进去
@@ -505,16 +517,30 @@ end
 -- 翻页 / 换技能后按钮会被改作他用：撤下覆盖层，避免数字滞留在不再对应本绑定的按钮上。
 -- 由主文件低频巡检调用（事件可能漏触发，这里做兜底）。match 为 nil（无法判定）时不动。
 function B.HideStaleEntries()
+    local changed = false
     for spellID, e in pairs(entries) do
         if e.buttonName and e.container then
             local match = B.ButtonMatchesBinding and B.ButtonMatchesBinding(e.buttonName, spellID)
             if match == false then
-                e.button, e.buttonName = nil, nil
-                HideEntry(e)
+                -- 按钮确实已改作他用（翻页 / 换技能 / 空槽）：停靠撤下，但【保留】引用。
+                -- 战斗中 RebuildEntries 不执行，若在此清引用就无法在战斗中恢复（切回来也不复原）；
+                -- 「保留引用 + 停靠」是可逆的：技能回到该按钮时下一次巡检即可原位恢复。
+                DockContainer(e)
+                e._hidden = true
+                e.visible = false
+                if not e._stale then
+                    e._stale = true
+                    changed = true
+                end
+            elseif match == true and e._stale then
+                -- 技能回到该按钮（切回原页）：清掉 stale 标记，交给 RefreshAll 原位恢复
+                e._stale = nil
+                changed = true
             end
         end
     end
     B.ApplyButtonGlows()
+    if changed and B.RefreshAll then B.RefreshAll() end
 end
 
 -- 全量刷新：重定位 + 同步发光（登录 / 切换专精 / 动作条变动 / 光环增删 / 定时兜底）

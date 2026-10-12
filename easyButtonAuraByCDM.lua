@@ -489,17 +489,31 @@ function B.GetActionBarButtonNames()
     return names
 end
 
--- 从按钮全局名取当前所载技能的 spellID（spell / 单法术宏均可）。
--- 只认暴雪原生动作条按钮；验证 id 是真实法术，避免宏 id 误匹配。
-local function GetButtonSpellID(buttonName)
+-- 按钮当前载物的精确状态：
+--   number = 该按钮载有可读的 spellID
+--   false  = 按钮是【空槽】（没放任何技能 / 物品）→ 该绑定肯定不在此按钮
+--   nil    = 无法判定（按钮不存在 / 载物不可读：宏、物品、secret 等）
+-- ⚠️ 必须区分 false 与 nil：翻页后「原格子放了别的技能」能读出 id、自然判为不匹配；
+--    而「原格子是空的」若也返回 nil，会被当成「无法判定」而不撤下覆盖层 → 数字残留。
+local function GetButtonSpellState(buttonName)
     local btn = _G[buttonName]
-    if not btn or not btn.action then return nil end
-    local ok, atype, id = pcall(GetActionInfo, btn.action)
+    if not btn then return nil end
+    local action = btn.action
+    if action == nil or action == 0 then return false end
+    if IsSecret(action) then return nil end
+    local ok, atype, id = pcall(GetActionInfo, action)
     if not ok or not atype or not id then return nil end
     if atype ~= "spell" and atype ~= "macro" then return nil end
     if IsSecret(id) then return nil end
     local okInfo, info = pcall(C_Spell.GetSpellInfo, id)
     if okInfo and info and info.name then return id end
+    return nil
+end
+
+-- 从按钮全局名取当前所载技能的 spellID（仅 spell；宏 / 空槽 / 不可读 → nil）
+local function GetButtonSpellID(buttonName)
+    local sid = GetButtonSpellState(buttonName)
+    if type(sid) == "number" then return sid end
     return nil
 end
 
@@ -520,9 +534,10 @@ function B.ButtonMatchesBinding(buttonName, auraSpellID)
     local cfg = B.GetBinding(auraSpellID)
     local target = cfg and cfg.bindSpell
     if not target then return nil end
-    local sid = GetButtonSpellID(buttonName)
-    if not sid then return nil end
-    return sid == target
+    local state = GetButtonSpellState(buttonName)
+    if state == false then return false end        -- 空槽：肯定不在此按钮
+    if type(state) ~= "number" then return nil end -- 无法判定：勿据此撤下
+    return state == target
 end
 
 -- =========================================================
