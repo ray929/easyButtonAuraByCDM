@@ -517,6 +517,18 @@ local function GetButtonSpellID(buttonName)
     return nil
 end
 
+-- 按钮的 action 槽位 ID（明文数字，战斗中一定可读；空槽 / 读不出 → nil）。
+-- 战斗中无法增删 / 替换动作条技能（受保护），故槽位 ID 变化只可能来自【翻页 / 形态切换】——
+-- 正是「需要撤下覆盖层」的场景，可作精确比对无法判定时的可靠回退信号。
+function B.GetButtonActionID(buttonName)
+    local btn = buttonName and _G[buttonName]
+    if not btn then return nil end
+    local action = btn.action
+    if action == nil or action == 0 then return nil end
+    if IsSecret(action) then return nil end
+    return action
+end
+
 -- 一次性扫描所有动作条，建立 spellID -> 按钮全局名 映射（首个匹配为准）
 function B.BuildSpellButtonMap()
     local map = {}
@@ -529,15 +541,23 @@ end
 
 -- 某按钮当前所载技能是否仍等于该绑定的目标技能。
 -- true / false（不匹配，按钮已被翻页或换技能改作他用）/ nil（无法判定，勿据此隐藏）。
-function B.ButtonMatchesBinding(buttonName, auraSpellID)
+-- expectAction（可选，挂靠时记录的 btn.action）：精确比对无法判定（战斗中 GetActionInfo 的 id
+--   可能是 secret → nil）时，回退比对「按钮 action 槽位 ID」——明文数字，战斗中一定可读。
+function B.ButtonMatchesBinding(buttonName, auraSpellID, expectAction)
     if not buttonName then return nil end
     local cfg = B.GetBinding(auraSpellID)
     local target = cfg and cfg.bindSpell
     if not target then return nil end
     local state = GetButtonSpellState(buttonName)
     if state == false then return false end        -- 空槽：肯定不在此按钮
-    if type(state) ~= "number" then return nil end -- 无法判定：勿据此撤下
-    return state == target
+    if type(state) == "number" then return state == target end -- 精确比对：读到 spellID，直接比
+    -- 无法判定（宏 / secret）：回退 action 槽位 ID 比对
+    if expectAction then
+        local cur = B.GetButtonActionID(buttonName)
+        if cur == nil then return nil end          -- 槽位 ID 也读不出 → 仍无法判定
+        return cur == expectAction
+    end
+    return nil
 end
 
 -- =========================================================

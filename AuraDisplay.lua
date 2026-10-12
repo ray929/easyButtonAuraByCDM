@@ -124,39 +124,46 @@ end
 -- 倒计时框锚点。⚠️ 只在 initializeFrame 回调内调用（见文件头说明）。
 -- 位置选项 up/down/left/right/none 在此生效；默认档 = 按钮左下角 62% 框
 -- （与上游 ActionbarEnhanced Manual / Preset 同一几何）。
-local function AnchorTime(cd, btn, cw, ch, pos)
+--
+-- ⚠️ 锚定目标必须是【自有容器 container 的 TOPLEFT】（而非 btn / AuraButton）：
+--   cd 是 AuraButton 的子帧（受限帧），战斗中在受限帧上的布局操作会被静默拦下；且 AuraButton
+--   的位置 / 尺寸受暴雪 AuraContainer flow layout 异步覆盖。锚到容器 TOPLEFT ＋ 固定像素偏移
+--   ＋ 显式 SetSize 后，cd 成为「容器子级锚定关系」—— 容器停靠屏幕外时 cd 自动跟随，战斗中
+--   无需重锚（对齐 easyButtonAuraByUnit 的 LayoutAuraChildren，修「切换技能栏后数字滞留」）。
+--   几何与锚 btn 等价：容器 rect == 按钮 rect（AuraButton 由 SetAllPoints(container) 跟随）。
+local function AnchorTime(cd, container, cw, ch, pos)
     cd:ClearAllPoints()
     if pos == "up" then
         cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
-        cd:SetPoint("CENTER", btn, "TOP", 0, SIDE_GAP)
+        cd:SetPoint("CENTER", container, "TOPLEFT", cw * 0.5, SIDE_GAP)
     elseif pos == "down" then
         cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
-        cd:SetPoint("CENTER", btn, "BOTTOM", 0, -SIDE_GAP)
+        cd:SetPoint("CENTER", container, "TOPLEFT", cw * 0.5, -ch - SIDE_GAP)
     elseif pos == "left" then
         cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
-        cd:SetPoint("CENTER", btn, "LEFT", -SIDE_GAP, 0)
+        cd:SetPoint("CENTER", container, "TOPLEFT", -SIDE_GAP, -ch * 0.5)
     elseif pos == "right" then
         cd:SetSize(cw * SIDE_SCALE, ch * SIDE_SCALE)
-        cd:SetPoint("CENTER", btn, "RIGHT", SIDE_GAP, 0)
+        cd:SetPoint("CENTER", container, "TOPLEFT", cw + SIDE_GAP, -ch * 0.5)
     else
-        cd:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 1, -6)
-        cd:SetPoint("TOPRIGHT", btn, "BOTTOMLEFT", cw * 0.62, ch * 0.62 - 7)
+        cd:SetSize(cw * 0.62 - 1, ch * 0.62 - 1)
+        cd:SetPoint("BOTTOMLEFT", container, "TOPLEFT", 1, -(ch + 6))
     end
 end
 
--- 层数文字锚点。⚠️ 同样只在 initializeFrame 回调内调用。
-local function AnchorStacks(fs, btn, pos)
+-- 层数文字锚点。⚠️ 同样只在 initializeFrame 回调内调用；锚定目标同 AnchorTime（容器 TOPLEFT）。
+local function AnchorStacks(fs, container, cw, ch, pos)
     fs:ClearAllPoints()
     if pos == "up" then
-        fs:SetPoint("CENTER", btn, "TOP", 0, SIDE_GAP)
+        fs:SetPoint("CENTER", container, "TOPLEFT", cw * 0.5, SIDE_GAP)
     elseif pos == "down" then
-        fs:SetPoint("CENTER", btn, "BOTTOM", 0, -SIDE_GAP)
+        fs:SetPoint("CENTER", container, "TOPLEFT", cw * 0.5, -ch - SIDE_GAP)
     elseif pos == "left" then
-        fs:SetPoint("CENTER", btn, "LEFT", -SIDE_GAP, 0)
+        fs:SetPoint("CENTER", container, "TOPLEFT", -SIDE_GAP, -ch * 0.5)
     elseif pos == "right" then
-        fs:SetPoint("CENTER", btn, "RIGHT", SIDE_GAP, 0)
+        fs:SetPoint("CENTER", container, "TOPLEFT", cw + SIDE_GAP, -ch * 0.5)
     else
-        fs:SetPoint("TOPLEFT", btn, "TOPLEFT", 5, -5)
+        fs:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -5)
     end
 end
 
@@ -236,7 +243,7 @@ local function BuildContainer(e)
                     cd:SetDrawSwipe(false)
                     cd:SetDrawEdge(false)
                     cd:SetHideCountdownNumbers(false)
-                    AnchorTime(cd, btn, cw, ch, timePos)
+                    AnchorTime(cd, container, cw, ch, timePos)
                     btn:SetDurationCooldown(cd)
                     e.cd = cd
                     e._cdStyled = nil
@@ -247,7 +254,7 @@ local function BuildContainer(e)
                     local fs = btn:CreateFontString(nil, "OVERLAY")
                     fs:SetFont(S.FONT, S.FONT_SIZE, S.OUTLINE)
                     fs:SetTextColor(S.STACK_COLOR[1], S.STACK_COLOR[2], S.STACK_COLOR[3])
-                    AnchorStacks(fs, btn, stackPos)
+                    AnchorStacks(fs, container, cw, ch, stackPos)
                     btn:SetApplicationCount(fs)
                     e.fs = fs
                 end
@@ -377,7 +384,8 @@ end
 -- =========================================================
 -- 停靠到屏幕外（不用 Hide：需保持可见才继续接收 UNIT_AURA，
 -- ShouldRegisterForDynamicEvents = IsVisible and IsEnabled）。
--- 子控件随容器一起移出屏幕 —— 受限帧上无法用 SetAlpha/Hide 单独收起数字。
+-- 子控件（cd / 层数文字）锚在容器 TOPLEFT 上（见 AnchorTime / AnchorStacks）→ 随容器一起移出
+-- 屏幕，无需（也不能）在受限帧上单独 SetAlpha / Hide 收起数字。
 local function DockContainer(e)
     local c = e.container
     if not c then return end
@@ -476,7 +484,7 @@ function B.RebuildEntries()
     -- 全局开关关闭：撤下所有覆盖层 + 停发光，且不建新容器；开启后下一次重建会恢复
     if B.IsEnabled and not B.IsEnabled() then
         for _, e in pairs(entries) do
-            e.button, e.buttonName = nil, nil
+            e.button, e.buttonName, e._actionID = nil, nil, nil
             HideEntry(e)
         end
         B.ApplyButtonGlows()
@@ -500,6 +508,9 @@ function B.RebuildEntries()
             local buttonName = map[cfg.bindSpell]
             e.buttonName = buttonName
             e.button = buttonName and _G[buttonName] or nil
+            -- 记录挂靠时的 action 槽位 ID：战斗中精确比对读不到 spellID 时用它做回退（见
+            -- B.ButtonMatchesBinding / B.GetButtonActionID）
+            e._actionID = buttonName and B.GetButtonActionID and B.GetButtonActionID(buttonName) or nil
             e._stale = nil      -- 脱战重建即彻底重解析，清掉巡检留下的 stale 标记
             EnsureContainerFor(spellID)
         end
@@ -509,7 +520,7 @@ function B.RebuildEntries()
     for spellID, e in pairs(entries) do
         local cfg = bindings[spellID]
         if not (cfg and cfg.bindSpell and known[spellID]) then
-            e.button, e.buttonName = nil, nil
+            e.button, e.buttonName, e._actionID = nil, nil, nil
             HideEntry(e)
         end
     end
@@ -523,7 +534,7 @@ function B.HideStaleEntries()
     local changed = false
     for spellID, e in pairs(entries) do
         if e.buttonName and e.container then
-            local match = B.ButtonMatchesBinding and B.ButtonMatchesBinding(e.buttonName, spellID)
+            local match = B.ButtonMatchesBinding and B.ButtonMatchesBinding(e.buttonName, spellID, e._actionID)
             if match == false then
                 -- 按钮确实已改作他用（翻页 / 换技能 / 空槽）：停靠撤下，但【保留】引用。
                 -- 战斗中 RebuildEntries 不执行，若在此清引用就无法在战斗中恢复（切回来也不复原）；
