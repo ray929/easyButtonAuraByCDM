@@ -776,6 +776,11 @@ eventFrame:SetScript("OnEvent", function(_, event)
     elseif event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
         B.SelectSpec()
     elseif event == "UNIT_AURA" or event == "PLAYER_TARGET_CHANGED" then
+        -- 切目标：unit token 未变但实体已变 → 目标单位槽位候选强制重置（坑 17），
+        -- 否则倒计时可能冻在旧目标的光环实例上。UNIT_AURA（同实体光环增删）无需重置。
+        if event == "PLAYER_TARGET_CHANGED" and B.ResetTargetUnitSlots then
+            B.ResetTargetUnitSlots()
+        end
         -- 光环增删 / 切目标 → 防抖刷新（数字显隐 + 发光 / 反发光即时纠正）
         B.ScheduleRefresh(0.2)
     elseif actionbarEvents[event] then
@@ -803,6 +808,8 @@ C_Timer.NewTicker(1.0, function()
     -- 战斗中挂起的容器创建（RebuildEntries 战斗中只置 _pendingBuild）：脱战后补建
     -- （RebuildEntries 自身在战斗中会早退，故这里调用是安全的；同时兜住 REGEN 事件漏触发）
     if B._pendingBuild and B.RebuildEntries then B.RebuildEntries() end
+    -- 切目标时的槽位候选重置若失败（理论不应发生），低频重试直至成功（错误留痕，防静默）
+    if B._slotResetPending and B.ResetTargetUnitSlots then B.ResetTargetUnitSlots() end
     local sig = B.GetActiveViewerSignature()
     if sig ~= lastSignature then
         lastSignature = sig

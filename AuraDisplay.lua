@@ -467,6 +467,29 @@ function B.OnCdmItemRefreshed(spellID, item)
     B.ApplyButtonGlows()
 end
 
+-- 切换目标后的槽位候选重置（修「切目标后倒计时冻在旧目标实例上」，见 docs 专有坑 17）。
+-- 根因：AuraContainer 的 aura slot 按 auraInstanceID 记账，候选表只在全量刷新时清空；
+-- UNIT_AURA 增量载荷只含【当前实体】的变化，旧目标的光环实例永远等不到 removed 事件。
+-- 切目标（unit token 不变、实体已变）后旧实例残留候选表，若它仍是 preferred 且
+-- assigned == preferred，RefreshAuraSlot 既不重分配也不更新按钮 → 倒计时冻在旧目标的
+-- 时间线上；重新施法刷的是新实例、preferred 依旧是旧实例 → 也救不回来，只能重载。
+-- 处置（与 easyButtonAuraByUnit 的 PLAYER_TARGET_CHANGED 处理同一方案）：显式调
+-- UpdateAllAuras → FullAuraRebuild → ParseAllAuras → ClearAuraSlotCandidates（forceReassign）
+-- → 全量重解析当前实体的光环 → 下一帧按新目标实例重新分配按钮、冷却重设。
+-- 战斗安全：不建帧（区别于会建帧的 AddAuraSlot，见坑 5）、不碰受保护 API；
+-- pcall 兜底，失败置 _slotResetPending 由 1s 巡检重试（错误留痕，防静默失败）。
+function B.ResetTargetUnitSlots()
+    local failed = false
+    for _, e in pairs(entries) do
+        if e.container and e.unit == "target" then
+            local ok = pcall(e.container.UpdateAllAuras, e.container)
+            if not ok then failed = true end
+        end
+    end
+    B._slotResetPending = failed or nil
+    return not failed
+end
+
 -- 根据当前绑定重建条目（绑定变动 / 专精切换 / 登录 / 动作条变动 / 脱战时调用）。
 -- ⚠️ 创建与挂靠【解耦】（2026-10-12）：
 --   ① 创建：为「CDM 已启用且有绑定」的每条光环【都】建容器，与「按钮是否解析到」无关；
