@@ -553,10 +553,57 @@ function B.RebuildEntries()
     B.RefreshAll()
 end
 
+-- =========================================================
+-- 按钮重解析（战斗安全）：对齐 easyButtonAuraByUnit 的 ResolveButton 自愈角色
+-- =========================================================
+-- 为【丢失按钮引用】（buttonName 为 nil）的有效绑定条目重新解析按钮并补挂靠。
+--   · 只补丢失的引用，既有引用绝不覆盖：战斗中 GetActionInfo 的 id 可能是 secret（坑 15），
+--     覆盖写入有把正在显示中的条目误停靠的风险；既有引用的有效性由 HideStaleEntries
+--     巡检判定（_stale 可逆停靠）。
+--   · 不创建 / 不重建容器（CreateFrame AuraContainer 战斗中失败）——容器生命周期仍归
+--     RebuildEntries（仅脱战）；找不到按钮就保持 nil，由调用方停靠，无副作用。
+--   · 无效条目（解绑 / 光环已从 CDM 移除）的清理归 RebuildEntries，这里不做。
+-- 典型场景（2026-10-14「野兽之眼 trick」，docs 坑 18）：脱战期间动作条被宠物条覆盖，
+-- RebuildEntries 重解析不到目标技能而清掉引用；取消野兽之眼的瞬间进战斗 + 动作条切回，
+-- 旧逻辑里唯一的重解析入口（RebuildEntries）被 InCombatLockdown 挡死 → 数字等脱战才恢复。
+-- 本函数可在战斗中调用：动作条事件（+0.1s）与 1s 巡检（HideStaleEntries）都会驱动它。
+function B.RebindButtons()
+    if not B.db then return false end
+    if B.IsEnabled and not B.IsEnabled() then return false end
+    local bindings = B.GetBindings()
+    local known = B.knownBuffs or {}
+    local map, changed = nil, false
+    for spellID, cfg in pairs(bindings) do
+        if known[spellID] and cfg.bindSpell then
+            local e = entries[spellID]
+            if not e then
+                e = { spellID = spellID }
+                entries[spellID] = e
+            end
+            if not e.buttonName then
+                map = map or B.BuildSpellButtonMap()
+                local buttonName = map[cfg.bindSpell]
+                if buttonName then
+                    e.buttonName = buttonName
+                    e.button = _G[buttonName]
+                    e._actionID = B.GetButtonActionID and B.GetButtonActionID(buttonName) or nil
+                    e._stale = nil
+                    changed = true
+                end
+            end
+        end
+    end
+    return changed
+end
+
 -- 翻页 / 换技能后按钮会被改作他用：撤下覆盖层，避免数字滞留在不再对应本绑定的按钮上。
 -- 由主文件低频巡检调用（事件可能漏触发，这里做兜底）。match 为 nil（无法判定）时不动。
+-- 2026-10-14 扩展：也负责【恢复】——引用丢失（buttonName 为 nil）的条目先经 RebindButtons
+-- 重解析（战斗安全），恢复则 changed 为真、末尾 RefreshAll 原位挂靠；不再只能等脱战重建
+-- （修「野兽之眼 trick」，docs 坑 18）。
 function B.HideStaleEntries()
     local changed = false
+    if B.RebindButtons and B.RebindButtons() then changed = true end
     for spellID, e in pairs(entries) do
         if e.buttonName and e.container then
             local match = B.ButtonMatchesBinding and B.ButtonMatchesBinding(e.buttonName, spellID, e._actionID)

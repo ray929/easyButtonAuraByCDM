@@ -786,7 +786,15 @@ eventFrame:SetScript("OnEvent", function(_, event)
     elseif actionbarEvents[event] then
         -- 延迟 0.1s：等动作条布局完成后再读按钮坐标 / 重算匹配
         C_Timer.After(0.1, function()
-            B.NotifyBindingsChanged()
+            if InCombatLockdown() then
+                -- 战斗中不重建条目（容器只能脱战创建 / 重建）：只做战斗安全的按钮重解析 + 重挂靠，
+                -- 对齐 easyButtonAuraByUnit 的动作条事件处理（InvalidateButtons + RefreshAll）。
+                -- 修「野兽之眼 trick」（2026-10-14，docs 坑 18）：脱战覆盖窗口内 RebuildEntries
+                -- 清掉按钮引用，取消瞬间进战斗把唯一重解析入口锁死 → 数字等脱战才恢复。
+                if B.RebindButtons then B.RebindButtons() end
+            else
+                B.NotifyBindingsChanged()
+            end
             if B.RefreshAll then B.RefreshAll() end
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
